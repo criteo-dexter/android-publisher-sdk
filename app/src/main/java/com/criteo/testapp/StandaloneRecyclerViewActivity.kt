@@ -78,8 +78,8 @@ class StandaloneRecyclerViewActivity : AppCompatActivity() {
   private fun loadBanner(adapter: Adapter) {
     val bannerView = CriteoBannerView(baseContext, STANDALONE_BANNER)
     bannerView.setCriteoBannerAdListener(object : TestAppBannerAdListener(javaClass.simpleName, "Banner", null) {
-      override fun onAdReceived(view: View?) {
-        adapter.addBannerAd(bannerView)
+      override fun onAdReceived(view: CriteoBannerView) {
+        adapter.addBannerAd(view)
       }
     })
 
