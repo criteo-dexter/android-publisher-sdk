@@ -1,8 +1,8 @@
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
-  name: garmadon
-  description: Observability of your Hadoop job
+  name: android-publisher-sdk
+  description: Android SDK for Publishers
   tags:
     - java
   annotations:
