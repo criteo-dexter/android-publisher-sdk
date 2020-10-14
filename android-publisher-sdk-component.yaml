@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: garmadon
+  description: Observability of your Hadoop job
+  tags:
+    - java
+  annotations:
+    backstage.io/techdocs-ref: github:http://github.com/criteo-dexter/android-publisher-sdk
+    github.com/project-slug: criteo/android-publisher-sdk
+spec:
+  type: library
+  lifecycle: production
+  owner: publisher-sdk@criteo.com

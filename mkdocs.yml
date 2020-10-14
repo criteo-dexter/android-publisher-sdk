@@ -1,0 +1,9 @@
+site_name: 'Android Publisher SDK'
+
+nav:
+  - Home: README.md
+
+repo_url: http://github.com/criteo-dexter/android-publisher-sdk
+
+plugins:
+  - techdocs-core
