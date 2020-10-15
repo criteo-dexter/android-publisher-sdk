@@ -9,6 +9,15 @@ metadata:
     backstage.io/techdocs-ref: github:http://github.com/criteo-dexter/android-publisher-sdk
     github.com/project-slug: criteo/android-publisher-sdk
 spec:
-  type: library
+  type: openapi
   lifecycle: production
   owner: publisher-sdk@criteo.com
+  definition: |
+    openapi: "3.0.0"
+    info:
+      version: 1.0.170
+      title: Criteo Marketing API
+      license:
+        name: Apache License 2.0
+    servers:
+      - url: https://api.criteo.com/marketing
