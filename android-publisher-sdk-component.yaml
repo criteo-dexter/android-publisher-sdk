@@ -6,9 +6,6 @@ metadata:
   tags:
     - criteo
     - rest
-  annotations:
-    # The annotation is deprecated, we use placeholders (see below) instead, remove it later.
-    backstage.io/definition-at-location: 'url:https://api.criteo.com/marketing/swagger/docs/v.1.0'
 spec:
   type: openapi
   lifecycle: production
