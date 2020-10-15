@@ -1,14 +1,14 @@
 apiVersion: backstage.io/v1alpha1
-kind: API
+kind: Component
 metadata:
-  name: criteo-marketing-api
-  description: Criteo Marketing API
+  name: android-publisher-sdk
+  description: Android SDK for Publishers
   tags:
-    - criteo
-    - rest
+    - java
+  annotations:
+    backstage.io/techdocs-ref: github:http://github.com/criteo-dexter/android-publisher-sdk
+    github.com/project-slug: criteo/android-publisher-sdk
 spec:
-  type: openapi
+  type: library
   lifecycle: production
   owner: publisher-sdk@criteo.com
-  definition:
-    $text: https://api.criteo.com/marketing/swagger/docs/v.1.0
