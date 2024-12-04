@@ -14,10 +14,11 @@
  *    limitations under the License.
  */
 
-import groovy.util.Node
 import groovy.util.NodeList
 import org.gradle.api.Project
+import org.gradle.api.Task
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.javadoc.Javadoc
 import org.gradle.jvm.tasks.Jar
 import org.gradle.kotlin.dsl.get
 
@@ -42,11 +43,12 @@ fun Project.addPublication(name: String, publication: SdkPublication.() -> Unit)
 
 class SdkPublication(
     private val project: Project,
-    mavenPublication: MavenPublication
+    private val mavenPublication: MavenPublication
 ) : MavenPublication by mavenPublication {
 
   init {
     setDefaultValue()
+    signPublication()
   }
 
   fun addSourcesJar(variantName: String) {
@@ -54,7 +56,12 @@ class SdkPublication(
   }
 
   fun addJavadocJar(variantName: String) {
-    artifact(project.getJavadocTask(variantName))
+    project.getJavadocTask(variantName).apply {
+      dependsOn(project.getAssembleTask(variantName))
+      isFailOnError = false
+    }
+
+    artifact(project.getJavadocJarTask(variantName))
   }
 
   private fun Project.createSourcesJarTask(variant: String): Jar {
@@ -69,11 +76,20 @@ class SdkPublication(
     }
   }
 
-  private fun Project.getJavadocTask(variant: String): Jar {
+  private fun Project.getAssembleTask(variant: String): Task {
+    return project.tasks.getByName("assemble${variant.capitalize()}")
+  }
+
+  private fun Project.getJavadocTask(variant: String): Javadoc {
+    return project.tasks.getByName("generate${variant.capitalize()}Javadoc") as Javadoc
+  }
+
+  private fun Project.getJavadocJarTask(variant: String): Jar {
     return project.tasks.getByName("generate${variant.capitalize()}JavadocJar") as Jar
   }
 
   private fun setDefaultValue() {
+    groupId = project.rootProject.group as String
     version = project.sdkPublicationVersion()
 
     pom {
@@ -105,6 +121,12 @@ class SdkPublication(
 
       developers {
         // We rely on Git to recognize contributors
+        developer {
+          name.set("R&D Direct")
+          email.set("pubsdk-owner@criteo.com")
+          organization.set("Criteo")
+          organizationUrl.set("https://www.criteo.com/")
+        }
       }
 
       scm {
@@ -116,5 +138,17 @@ class SdkPublication(
   }
 
   private operator fun NodeList.get(name: String): NodeList = getAt(name)
+
+  private fun signPublication() {
+    project.signing?.apply {
+      val secretKey = System.getenv("MAVEN_SECRING_GPG_BASE64")
+      val password = System.getenv("MAVEN_SECRING_PASSWORD")
+
+      if (secretKey != null && password != null) {
+        useInMemoryPgpKeys(secretKey, password)
+        sign(mavenPublication)
+      }
+    }
+  }
 
 }

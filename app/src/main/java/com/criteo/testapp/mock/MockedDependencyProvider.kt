@@ -16,17 +16,24 @@
 
 package com.criteo.testapp.mock
 
+import android.app.Application
 import com.criteo.publisher.Criteo
 import com.criteo.publisher.CriteoUtil
 import com.criteo.publisher.DependencyProvider
 import com.criteo.publisher.MockableDependencyProvider
 import com.criteo.publisher.integration.IntegrationDetector
 import com.criteo.publisher.integration.IntegrationRegistry
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.spy
-import com.nhaarman.mockitokotlin2.whenever
+import com.criteo.testapp.CoppaActivity
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.whenever
 
 internal object MockedDependencyProvider {
+
+  @JvmStatic
+  fun prepareMock(application: Application) {
+    DependencyProvider.getInstance().setApplication(application)
+  }
 
   /**
    * Setup a new mocked dependency provider.
@@ -34,39 +41,26 @@ internal object MockedDependencyProvider {
    * This method can be called many times. Old mocks are erased and a new fresh dependency provider
    * is setup.
    *
-   * The Criteo SDK is also reinitialized (without any prefetched bids) so there is no issue in the
-   * dependency graph.
+   * The Criteo SDK is not reinitialized (without any prefetched bids) so, you should reset it if already setup to not
+   * have issues in the dependency graph.
    */
+  @JvmStatic
   fun startMocking(injections: MockInjection.() -> Unit) {
     // Mockito needs this property to know where to store generated classes
-    val application = DependencyProvider.getInstance().provideApplication()
+    val oldInstance = DependencyProvider.getInstance()
+    val application = oldInstance.provideApplication()
     System.setProperty("org.mockito.android.target", application.cacheDir.path)
 
-    resetCriteo {
-      MockableDependencyProvider.setInstance(null)
-      val newInstance = DependencyProvider.getInstance()
-      val dependencyProvider = spy(newInstance)
-      MockableDependencyProvider.setInstance(dependencyProvider)
+    MockableDependencyProvider.setInstance(null)
+    val newInstance = DependencyProvider.getInstance()
+    val dependencyProvider = spy(newInstance)
+    MockableDependencyProvider.setInstance(dependencyProvider)
 
-      injections(MockInjection(dependencyProvider))
-    }
+    injections(MockInjection(oldInstance, dependencyProvider))
   }
 
-  /**
-   * Stop having a mocked dependency provider.
-   *
-   * This method can be called many times. A new fresh dependency provider is setup.
-   *
-   * The Criteo SDK is also reinitialized (without any prefetched bids) so there is no issue in the
-   * dependency graph.
-   */
-  fun stopMocking() {
-    resetCriteo {
-      MockableDependencyProvider.setInstance(null)
-    }
-  }
-
-  private fun resetCriteo(action: () -> Unit) {
+  @JvmStatic
+  fun resetCriteo(action: () -> Unit) {
     val oldInstance = DependencyProvider.getInstance()
     val application = oldInstance.provideApplication()
     val criteoPublisherId = oldInstance.provideCriteoPublisherId()
@@ -74,10 +68,15 @@ internal object MockedDependencyProvider {
     action()
 
     CriteoUtil.clearCriteo()
-    Criteo.Builder(application, criteoPublisherId).init()
+    Criteo.Builder(application, criteoPublisherId)
+        .tagForChildDirectedTreatment(CoppaActivity.currentCoppaFlag)
+        .init()
   }
 
-  internal class MockInjection(private val dependencyProvider: DependencyProvider) {
+  internal class MockInjection(
+      val oldDependencyProvider: DependencyProvider,
+      private val dependencyProvider: DependencyProvider
+  ) {
     fun <T> inject(bean: T) {
       // When mocking using the doReturn API of mockito, the method call return a null. But all
       // provide* methods of the dependency provider are @NonNull so Kotlin compiler automatically

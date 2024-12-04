@@ -17,6 +17,7 @@
 package com.criteo.publisher;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import android.app.Application;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.integration.Integration;
 import com.criteo.publisher.integration.IntegrationRegistry;
 import com.criteo.publisher.mock.MockBean;
@@ -36,13 +38,17 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class CriteoInterstitialTest {
 
   @Rule
   @JvmField
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private Criteo criteo;
@@ -52,23 +58,31 @@ public class CriteoInterstitialTest {
 
   private InterstitialAdUnit adUnit = new InterstitialAdUnit("mock");
 
+  @Mock
+  private ContextData contextData;
+
   private CriteoInterstitial interstitial;
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     interstitial = spy(new CriteoInterstitial(adUnit, criteo));
+  }
+
+  @Test
+  public void loadAdStandalone_GivenNoContext_LoadAdWithEmptyContext() throws Exception {
+    interstitial.loadAd();
+
+    verify(interstitial).loadAd(eq(new ContextData()));
   }
 
   @Test
   public void loadAdStandalone_GivenControllerAndLoadTwice_DelegateToItTwice() throws Exception {
     CriteoInterstitialEventController controller = givenMockedController();
 
-    interstitial.loadAd();
-    interstitial.loadAd();
+    interstitial.loadAd(contextData);
+    interstitial.loadAd(contextData);
 
-    verify(controller, times(2)).fetchAdAsync(adUnit);
+    verify(controller, times(2)).fetchAdAsync(adUnit, contextData);
     verify(integrationRegistry, times(2)).declare(Integration.STANDALONE);
   }
 
@@ -113,7 +127,7 @@ public class CriteoInterstitialTest {
     CriteoInterstitialEventController controller = givenMockedController();
     Application application = givenNullApplication();
 
-    interstitial.loadAd();
+    interstitial.loadAd(new ContextData());
 
     verifyNoMoreInteractions(controller);
     DependencyProvider.getInstance().setApplication(application);

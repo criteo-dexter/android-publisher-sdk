@@ -17,13 +17,22 @@
 package com.criteo.publisher.logging
 
 import android.util.Log
-import com.criteo.publisher.util.BuildConfigWrapper
-import com.nhaarman.mockitokotlin2.*
+import com.criteo.publisher.CriteoNotInitializedException
+import com.criteo.publisher.dependency.LazyDependency
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
 import org.mockito.junit.MockitoJUnit
 import org.mockito.junit.MockitoRule
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argThat
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.inOrder
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 
 class LoggerTest {
 
@@ -32,109 +41,153 @@ class LoggerTest {
   val mockitoRule: MockitoRule = MockitoJUnit.rule()
 
   @Mock
-  private lateinit var buildConfigWrapper: BuildConfigWrapper
+  private lateinit var handler1: LogHandler
+
+  @Mock
+  private lateinit var handler2: LogHandler
+
+  private lateinit var logger: Logger
+
+  @Before
+  fun setUp() {
+    logger = spy(Logger("myTag", listOf(LazyDependency { handler1 }, LazyDependency { handler2 })))
+  }
 
   @Test
-  fun debug_GivenMessageAndArgs_PrintFormattedMessage() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.VERBOSE)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
-
+  fun debug_GivenMessageAndArgs_DelegateFormattedMessage() {
     logger.debug("Hello %s", "World")
 
-    verify(logger).println(Log.DEBUG, "Hello World")
+    verify(handler1).log("myTag", LogMessage(Log.DEBUG, "Hello World"))
+    verify(handler2).log("myTag", LogMessage(Log.DEBUG, "Hello World"))
   }
 
   @Test
-  fun debug_GivenMessageAndThrowable_PrintMessageThenStacktrace() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.DEBUG)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
+  fun debug_GivenMessageAndThrowable_DelegateMessageAndThrowable() {
+    val exception = Exception()
+    logger.debug("Hello", exception)
 
-    logger.debug("Hello", Exception())
+    verify(handler1).log("myTag", LogMessage(Log.DEBUG, "Hello", exception))
+    verify(handler2).log("myTag", LogMessage(Log.DEBUG, "Hello", exception))
+  }
 
-    inOrder(logger) {
-      verify(logger).println(Log.DEBUG, "Hello")
-      verify(logger).println(eq(Log.DEBUG), anyOrNull())
+  @Test
+  fun debug_GivenOnlyThrowable_DelegateThrowable() {
+    val exception = Exception()
+    logger.debug(exception)
+
+    verify(handler1).log("myTag", LogMessage(Log.DEBUG, null, exception))
+    verify(handler2).log("myTag", LogMessage(Log.DEBUG, null, exception))
+  }
+
+  @Test
+  fun log_GivenOneHandlerThrowing_IgnoreErrorAndKeepLoggingWithOtherHandler() {
+    whenever(handler1.log(any(), any())).doThrow(Exception::class)
+    val logMessage = LogMessage(Log.INFO, "message")
+
+    logger.log(logMessage)
+
+    verify(handler2).log("myTag", logMessage)
+  }
+
+  @Test
+  fun log_GivenOneHandlerProviderThrowing_IgnoreErrorAndKeepLoggingWithOtherHandler() {
+    val logMessage = LogMessage(Log.INFO, "message")
+
+    logger = Logger("myTag", listOf(
+        LazyDependency<LogHandler> { throw CriteoNotInitializedException("") },
+        LazyDependency { handler2 }
+    ))
+
+    logger.log(logMessage)
+
+    verify(handler2).log("myTag", logMessage)
+  }
+
+  @Test
+  fun log_GivenLogsProducedWhileLogging_LogItOnlyOnceAndStopRecursion() {
+    lateinit var logger: Logger
+
+    val handler = mock<LogHandler>()
+
+    handler1 = object : LogHandler {
+      override fun log(tag: String, logMessage: LogMessage) {
+        logger.debug("start handler1#log")
+        handler.log(tag, logMessage.copy(message = "handler1: ${logMessage.message}"))
+        logger.debug("end handler1#log")
+      }
+    }
+
+    handler2 = object : LogHandler {
+      override fun log(tag: String, logMessage: LogMessage) {
+        logger.debug("start handler2#log")
+        handler.log(tag, logMessage.copy(message = "handler2: ${logMessage.message}"))
+        logger.debug("end handler2#log")
+      }
+    }
+
+    logger = Logger("myTag", listOf(LazyDependency { handler1 }, LazyDependency { handler2 }))
+    logger.log(LogMessage(message = "dummy message"))
+
+    inOrder(handler) {
+      verify(handler).log(any(), argThat { message == "handler1: start handler1#log" })
+      verify(handler).log(any(), argThat { message == "handler2: start handler1#log" })
+      verify(handler).log(any(), argThat { message == "handler1: dummy message" })
+      verify(handler).log(any(), argThat { message == "handler1: end handler1#log" })
+      verify(handler).log(any(), argThat { message == "handler2: end handler1#log" })
+
+      verify(handler).log(any(), argThat { message == "handler1: start handler2#log" })
+      verify(handler).log(any(), argThat { message == "handler2: start handler2#log" })
+      verify(handler).log(any(), argThat { message == "handler2: dummy message" })
+      verify(handler).log(any(), argThat { message == "handler1: end handler2#log" })
+      verify(handler).log(any(), argThat { message == "handler2: end handler2#log" })
+
       verifyNoMoreInteractions()
     }
   }
 
   @Test
-  fun debug_GivenMinLogLevelHigherThanDebug_IgnoreLog() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.INFO)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
+  fun log_GivenManyLoggersProducingLogsWhileLogging_LogItOnlyOnceAndStopRecursion() {
+    lateinit var handler1: LogHandler
+    lateinit var handler2: LogHandler
 
-    logger.debug("Hello")
+    fun newLogger(): Logger = Logger("myTag", listOf(LazyDependency { handler1 }, LazyDependency { handler2 }))
 
-    verify(logger, never()).println(any(), any())
-  }
+    val handler = mock<LogHandler>()
 
-  @Test
-  fun info_GivenMessageAndThrowable_PrintMessageThenStacktrace() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.INFO)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
+    handler1 = object : LogHandler {
+      override fun log(tag: String, logMessage: LogMessage) {
+        val logger = newLogger()
+        logger.debug("start handler1#log")
+        handler.log(tag, logMessage.copy(message = "handler1: ${logMessage.message}"))
+        logger.debug("end handler1#log")
+      }
+    }
 
-    logger.info("Hello", Exception())
+    handler2 = object : LogHandler {
+      override fun log(tag: String, logMessage: LogMessage) {
+        val logger = newLogger()
+        logger.debug("start handler2#log")
+        handler.log(tag, logMessage.copy(message = "handler2: ${logMessage.message}"))
+        logger.debug("end handler2#log")
+      }
+    }
 
-    inOrder(logger) {
-      verify(logger).println(Log.INFO, "Hello")
-      verify(logger).println(eq(Log.INFO), anyOrNull())
+    newLogger().log(LogMessage(message = "dummy message"))
+
+    inOrder(handler) {
+      verify(handler).log(any(), argThat { message == "handler1: start handler1#log" })
+      verify(handler).log(any(), argThat { message == "handler2: start handler1#log" })
+      verify(handler).log(any(), argThat { message == "handler1: dummy message" })
+      verify(handler).log(any(), argThat { message == "handler1: end handler1#log" })
+      verify(handler).log(any(), argThat { message == "handler2: end handler1#log" })
+
+      verify(handler).log(any(), argThat { message == "handler1: start handler2#log" })
+      verify(handler).log(any(), argThat { message == "handler2: start handler2#log" })
+      verify(handler).log(any(), argThat { message == "handler2: dummy message" })
+      verify(handler).log(any(), argThat { message == "handler1: end handler2#log" })
+      verify(handler).log(any(), argThat { message == "handler2: end handler2#log" })
+
       verifyNoMoreInteractions()
     }
   }
-
-  @Test
-  fun info_GivenMessageAndArgs_PrintFormattedMessage() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.INFO)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
-
-    logger.info("Hello %s", "World")
-
-    verify(logger).println(Log.INFO, "Hello World")
-  }
-
-
-  @Test
-  fun info_GivenMinLogLevelHigherThanInfo_IgnoreLog() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.WARN)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
-
-    logger.info("Hello")
-
-    verify(logger, never()).println(any(), any())
-  }
-
-  @Test
-  fun error_GivenJustThrowable_PrintStacktrace() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.ERROR)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
-
-    logger.error(Exception())
-
-    verify(logger).println(eq(Log.ERROR), anyOrNull())
-  }
-
-  @Test
-  fun error_GivenThrowableAndMessage_PrintMessageThenStacktrace() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.INFO)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
-
-    logger.error("Hello", Exception())
-
-    inOrder(logger) {
-      verify(logger).println(Log.ERROR, "Hello")
-      verify(logger).println(eq(Log.ERROR), anyOrNull())
-      verifyNoMoreInteractions()
-    }
-  }
-
-  @Test
-  fun error_GivenMinLogLevelHigherThanError_IgnoreLog() {
-    whenever(buildConfigWrapper.minLogLevel).doReturn(Log.ASSERT)
-    val logger = spy(Logger(javaClass, buildConfigWrapper))
-
-    logger.error(Exception())
-
-    verify(logger, never()).println(any(), any())
-  }
-
 }

@@ -17,12 +17,12 @@
 package com.criteo.publisher.headerbidding
 
 import com.criteo.publisher.util.AdUnitType
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.verifyZeroInteractions
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verifyNoInteractions
 
 class DfpHeaderBiddingNoDfpTest {
 
@@ -31,7 +31,7 @@ class DfpHeaderBiddingNoDfpTest {
   @Before
   fun setUp() {
     assertThatCode {
-      Class.forName("com.google.android.gms.ads.doubleclick.PublisherAdRequest")
+      Class.forName("com.google.android.gms.ads.admanager.AdManagerAdRequest")
     }.withFailMessage("""
 The tests in this file validate that DFP feature is only degraded, but do not throw, if the
 dependency is not provided at runtime.
@@ -60,6 +60,6 @@ via IntelliJ delegating test run to Gradle.
 
     headerBidding.enrichBid(builder, AdUnitType.CRITEO_BANNER, mock())
 
-    verifyZeroInteractions(builder)
+    verifyNoInteractions(builder)
   }
 }

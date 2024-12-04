@@ -15,25 +15,32 @@
  */
 
 import Deps.Criteo.Mediation.AdMob
-import Deps.Criteo.Mediation.MoPub
 
 plugins {
     id("com.android.application")
     `maven-publish`
+    signing
     kotlin("android")
-    id("com.jfrog.bintray")
+    id("com.vanniktech.android.javadoc") version "0.3.0"
     id("io.gitlab.arturbosch.detekt")
 }
 
-androidAppModule("com.criteo.pubsdk_android")
+androidAppModule("com.criteo.pubsdk_android") {
+    addBuildConfigField<Boolean>("useCdbMock")
+    addBuildConfigField<Boolean>("doNotDetectMediationAdapter")
+}
 
 android {
-    flavorDimensions("mode")
+    flavorDimensions += listOf("mode")
     productFlavors {
         create("memoryLeaksHunt") {
             dimension = "mode"
             versionNameSuffix = "-memoryLeaksHunt"
         }
+    }
+
+    packagingOptions {
+        exclude("META-INF/mediation_release.kotlin_module")
     }
 
     defaultConfig {
@@ -43,7 +50,12 @@ android {
 
 // Export APK for all build types (release, staging, debug)
 addPublication("Apk") {
-    groupId = "com.criteo.publisher"
+    afterEvaluate {
+        val mainVariant = "memoryLeaksHuntRelease"
+        addSourcesJar(mainVariant)
+        addJavadocJar(mainVariant)
+    }
+
     artifactId = "criteo-publisher-sdk-test-app"
 
     pom {
@@ -61,31 +73,9 @@ addPublication("Apk") {
     }
 }
 
-addBintrayRepository {
-    // JCenter only accepts packages representing library with .jar or .aar
-    // The test app is not in this case. Hence, we push it on Bintray but in a dedicated package,
-    // that will not get sync with JCenter (as it is not needed).
-    with(pkg) {
-        name = "publisher-sdk-test-app"
-    }
-}
-
 dependencies {
     implementation(project(":publisher-sdk"))
     implementation(project(":test-utils"))
-
-    implementation(MoPub("(,${sdkVersion()}.99)")) {
-        exclude(group = Deps.Criteo.PublisherSdk.group)
-        isChanging = true
-        because(
-            """
-            Select the biggest available version up to the current SDK version.
-            This allows bumping the SDK version without having trouble even if this adapter is not
-            yet upgraded.
-            The .99 is needed because Gradle range does not support + syntax in the range syntax
-            """.trimIndent()
-        )
-    }
 
     implementation(AdMob("(,${sdkVersion()}.99)")) {
         exclude(group = Deps.Criteo.PublisherSdk.group)
@@ -105,23 +95,12 @@ dependencies {
     implementation(Deps.AndroidX.AppCompat)
     implementation(Deps.AndroidX.Constraint.ConstraintLayout)
     implementation(Deps.AndroidX.MaterialComponents)
+    implementation(Deps.AndroidX.Preferences)
     implementation(Deps.Square.Picasso.Picasso)
     implementation(Deps.Mockito.Android)
     implementation(Deps.Mockito.Kotlin)
 
     implementation(Deps.Google.AdMob)
-
-    implementation(Deps.MoPub.Banner) {
-        isTransitive = true
-    }
-
-    implementation(Deps.MoPub.Interstitial) {
-        isTransitive = true
-    }
-
-    implementation(Deps.MoPub.Native) {
-        isTransitive = true
-    }
 
     "memoryLeaksHuntImplementation"(Deps.Square.LeakCanary.LeakCanary)
     detektPlugins(Deps.Detekt.DetektFormatting)

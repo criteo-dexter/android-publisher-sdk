@@ -16,57 +16,44 @@
 
 package com.criteo.publisher;
 
-import static com.criteo.publisher.CriteoUtil.clearCriteo;
 import static com.criteo.publisher.CriteoUtil.getCriteoBuilder;
 import static com.criteo.publisher.CriteoUtil.givenInitializedCriteo;
-import static junit.framework.Assert.assertNull;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.preference.PreferenceManager;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
 import com.criteo.publisher.model.CdbRequest;
 import com.criteo.publisher.network.PubSdkApi;
+import com.criteo.publisher.util.SharedPreferencesFactory;
 import javax.inject.Inject;
-import org.junit.After;
-import org.junit.Assert;
-import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class UserPrivacyFunctionalTest {
 
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
 
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
+
   @SpyBean
   private PubSdkApi pubSdkApi;
 
   @Inject
-  private Context context;
-
-  private SharedPreferences defaultSharedPreferences;
-
-  @Before
-  public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
-    defaultSharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
-  }
-
-  @After
-  public void after() {
-    defaultSharedPreferences.edit().clear().commit();
-  }
+  private SharedPreferencesFactory sharedPreferencesFactory;
 
   @Test
   public void whenCriteoInit_GivenUspIabNotEmpty_VerifyItIsPassedToCdb() throws Exception {
@@ -79,7 +66,7 @@ public class UserPrivacyFunctionalTest {
     verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
     CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("fake_iab_usp", cdb.getUser().uspIab());
+    assertEquals("fake_iab_usp", cdb.getUser().getUspIab());
   }
 
   @Test
@@ -93,7 +80,7 @@ public class UserPrivacyFunctionalTest {
     verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
     CdbRequest cdb = cdbArgumentCaptor.getValue();
-    Assert.assertNull(cdb.getUser().uspIab());
+    assertNull(cdb.getUser().getUspIab());
   }
 
   @Test
@@ -107,7 +94,7 @@ public class UserPrivacyFunctionalTest {
     verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
     CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("true", cdb.getUser().uspOptout());
+    assertEquals("true", cdb.getUser().getUspOptout());
   }
 
   @Test
@@ -121,23 +108,7 @@ public class UserPrivacyFunctionalTest {
     verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
     CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertNull(cdb.getUser().uspOptout());
-  }
-
-  @Test
-  public void whenCriteoInit_GivenUspOptoutTrue_ThenChangedToFalse_VerifyFalseIsPassedToCdb()
-      throws Exception {
-    Criteo.Builder builder = getCriteoBuilder(TestAdUnits.BANNER_320_50);
-    Criteo criteo = builder.usPrivacyOptOut(true).init();
-    criteo.setUsPrivacyOptOut(false);
-
-    waitForIdleState();
-
-    ArgumentCaptor<CdbRequest> cdbArgumentCaptor = ArgumentCaptor.forClass(CdbRequest.class);
-    verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
-
-    CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("false", cdb.getUser().uspOptout());
+    assertNull(cdb.getUser().getUspOptout());
   }
 
   @Test
@@ -149,7 +120,7 @@ public class UserPrivacyFunctionalTest {
     waitForIdleState();
 
     criteo.setUsPrivacyOptOut(false);
-    criteo.getBidForAdUnit(TestAdUnits.BANNER_320_480, mock(BidListener.class));
+    criteo.getBidForAdUnit(TestAdUnits.BANNER_320_480, mock(ContextData.class), mock(BidListener.class));
 
     waitForIdleState();
 
@@ -157,71 +128,48 @@ public class UserPrivacyFunctionalTest {
     verify(pubSdkApi, times(2)).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
     CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("false", cdb.getUser().uspOptout());
+    assertEquals("false", cdb.getUser().getUspOptout());
   }
 
   @Test
-  public void whenCriteoInit_GivenMopubConsentNotEmpty_VerifyItIsPassedToCdb() throws Exception {
-    Criteo.Builder builder = getCriteoBuilder(TestAdUnits.BANNER_320_50);
-    builder.mopubConsent("fake_mopub_consent").init();
+  public void whenCriteoInitAndLoadBid_GivenTagForChildDirectedTreatmentIsNotSet_VerifyNullRegsIsPassedToCdb()
+      throws Exception {
+    getCriteoBuilder().init().loadBid(
+        TestAdUnits.BANNER_320_50,
+        mock(ContextData.class),
+        mock(BidResponseListener.class)
+    );
 
     waitForIdleState();
 
     ArgumentCaptor<CdbRequest> cdbArgumentCaptor = ArgumentCaptor.forClass(CdbRequest.class);
     verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
-    CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("fake_mopub_consent", cdb.getUser().mopubConsent());
+    CdbRequest cdbRequest = cdbArgumentCaptor.getValue();
+    assertNull(cdbRequest.getRegs());
   }
 
   @Test
-  public void whenCriteoInit_GivenMopubConsentNotProvided_ThenProvidedAfterFirstCall_VerifyItIsPassedToCdbOnTheSecondCall()
+  public void whenCriteoInitAndLoadBid_GivenTagForChildDirectedTreatmentIsTrue_VerifyRegsWithTrueFlagArePassedToCdb()
       throws Exception {
-    Criteo.Builder builder = getCriteoBuilder(TestAdUnits.BANNER_320_50);
-    Criteo criteo = builder.init();
-
-    waitForIdleState();
-
-    criteo.setMopubConsent("fake_mopub_consent");
-    criteo.getBidForAdUnit(TestAdUnits.BANNER_320_480, mock(BidListener.class));
+    getCriteoBuilder().tagForChildDirectedTreatment(true).init().loadBid(
+        TestAdUnits.BANNER_320_50,
+        mock(ContextData.class),
+        mock(BidResponseListener.class)
+    );
 
     waitForIdleState();
 
     ArgumentCaptor<CdbRequest> cdbArgumentCaptor = ArgumentCaptor.forClass(CdbRequest.class);
-    verify(pubSdkApi, times(2)).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
+    verify(pubSdkApi).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
 
-    CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("fake_mopub_consent", cdb.getUser().mopubConsent());
-  }
-
-  @Test
-  public void whenCriteoInit_GivenMopubConsentThroughSetter_ThenCriteoCleared_ThenVerifyItIsStillPassedToCdb()
-      throws Exception {
-    // given
-    Criteo.Builder builder = getCriteoBuilder(TestAdUnits.BANNER_320_50);
-    Criteo criteo = builder.init();
-
-    waitForIdleState();
-
-    criteo.setMopubConsent("fake_mopub_consent");
-
-    // when
-    clearCriteo();
-
-    // then
-    Criteo.Builder builder2 = getCriteoBuilder(TestAdUnits.BANNER_320_50);
-    Criteo criteo2 = builder2.init();
-    criteo2.getBidForAdUnit(TestAdUnits.BANNER_320_480, mock(BidListener.class));
-    waitForIdleState();
-    ArgumentCaptor<CdbRequest> cdbArgumentCaptor = ArgumentCaptor.forClass(CdbRequest.class);
-    verify(pubSdkApi, times(3)).loadCdb(cdbArgumentCaptor.capture(), any(String.class));
-
-    CdbRequest cdb = cdbArgumentCaptor.getValue();
-    assertEquals("fake_mopub_consent", cdb.getUser().mopubConsent());
+    CdbRequest cdbRequest = cdbArgumentCaptor.getValue();
+    assertNotNull(cdbRequest.getRegs());
+    assertTrue(cdbRequest.getRegs().getTagForChildDirectedTreatment());
   }
 
   private void writeIntoDefaultSharedPrefs(String key, String value) {
-    Editor edit = defaultSharedPreferences.edit();
+    Editor edit = sharedPreferencesFactory.getApplication().edit();
     edit.putString(key, value);
     edit.commit();
   }

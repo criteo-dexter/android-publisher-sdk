@@ -17,11 +17,17 @@
 plugins {
   id("com.android.library")
   `maven-publish`
+  signing
   jacoco
   kotlin("android")
+  kotlin("kapt")
+  id("kotlin-allopen")
   id("com.vanniktech.android.javadoc") version "0.3.0"
-  id("com.jfrog.bintray")
   id("io.gitlab.arturbosch.detekt")
+}
+
+allOpen {
+  annotation("com.criteo.publisher.annotation.OpenForTesting")
 }
 
 androidLibModule()
@@ -30,20 +36,18 @@ android {
   defaultConfig {
     multiDexEnabled = true
   }
-
-  packagingOptions {
-    // Both AssertJ and ByteBuddy (via Mockito) bring this and the duplication yields an error
-    exclude("META-INF/licenses/ASM")
-  }
 }
 
 dependencies {
   compileOnly(project(":publisher-sdk"))
+  compileOnly(Deps.AssertJ.AssertJ)
 
   implementation(Deps.AndroidX.MultiDex)
   implementation(Deps.JUnit.JUnit)
   implementation(Deps.Square.OkHttp.MockWebServer)
-  compileOnly(Deps.AutoValue.GsonRuntime)
+  implementation(Deps.Square.OkHttp.OkHttpTls)
+  implementation(Deps.Square.Moshi.Adapter)
+  kapt(Deps.Square.Moshi.Kapt)
 
   compileOnly(Deps.Mockito.Core) {
     because("Brings injected mock mechanism. Caller should provide its own Mockito deps.")
@@ -60,10 +64,13 @@ dependencies {
   testImplementation(Deps.Mockito.Kotlin)
   testImplementation(Deps.AssertJ.AssertJ)
 
+  androidTestImplementation(project(":publisher-sdk"))
   androidTestImplementation(Deps.AndroidX.Test.Runner)
   androidTestImplementation(Deps.AssertJ.AssertJ)
   androidTestImplementation(Deps.Mockito.Android)
   androidTestImplementation(Deps.Mockito.Kotlin)
+  androidTestImplementation(Deps.Google.AdMob)
+  androidTestImplementation(Deps.Google.AdsIdentifier)
 
   detektPlugins(Deps.Detekt.DetektFormatting)
 }
@@ -75,9 +82,6 @@ addPublication("debug") {
     addJavadocJar("debug")
   }
 
-  groupId = "com.criteo.publisher"
   artifactId = "criteo-publisher-sdk-test-utils"
   pom.description.set("Utilities for tests on the Criteo Publisher SDK")
 }
-
-addBintrayRepository()

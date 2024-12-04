@@ -16,19 +16,20 @@
 
 package com.criteo.publisher
 
+import com.criteo.publisher.context.ContextData
 import com.criteo.publisher.mock.MockedDependenciesRule
 import com.criteo.publisher.mock.SpyBean
 import com.criteo.publisher.model.AdUnit
 import com.criteo.publisher.model.CdbResponseSlot
 import com.criteo.publisher.model.Config
-import com.nhaarman.mockitokotlin2.doAnswer
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.verifyNoMoreInteractions
-import com.nhaarman.mockitokotlin2.whenever
 import org.junit.Rule
 import org.junit.Test
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 
 class BidManagerTest {
 
@@ -49,12 +50,13 @@ class BidManagerTest {
     val adUnit = mock<AdUnit>()
     val expected = mock<CdbResponseSlot>()
     val bidListener = mock<BidListener>()
+    val contextData = mock<ContextData>()
 
     doAnswer {
-      it.getArgument<BidListener>(1).onBidResponse(expected)
-    }.whenever(bidManager).getLiveBidForAdUnit(adUnit, bidListener)
+      it.getArgument<BidListener>(2).onBidResponse(expected)
+    }.whenever(bidManager).getLiveBidForAdUnit(adUnit, contextData, bidListener)
 
-    bidManager.getBidForAdUnit(adUnit, bidListener)
+    bidManager.getBidForAdUnit(adUnit, contextData, bidListener)
 
     verify(bidListener).onBidResponse(expected)
     verifyNoMoreInteractions(bidListener)
@@ -66,12 +68,13 @@ class BidManagerTest {
 
     val adUnit = mock<AdUnit>()
     val bidListener = mock<BidListener>()
+    val contextData = mock<ContextData>()
 
     doAnswer {
-      it.getArgument<BidListener>(1).onNoBid()
-    }.whenever(bidManager).getLiveBidForAdUnit(adUnit, bidListener)
+      it.getArgument<BidListener>(2).onNoBid()
+    }.whenever(bidManager).getLiveBidForAdUnit(adUnit, contextData, bidListener)
 
-    bidManager.getBidForAdUnit(adUnit, bidListener)
+    bidManager.getBidForAdUnit(adUnit, contextData, bidListener)
 
     verify(bidListener).onNoBid()
     verifyNoMoreInteractions(bidListener)
@@ -84,10 +87,11 @@ class BidManagerTest {
     val adUnit = mock<AdUnit>()
     val expected = mock<CdbResponseSlot>()
     val bidListener = mock<BidListener>()
+    val contextData = mock<ContextData>()
 
-    doReturn(expected).whenever(bidManager).getBidForAdUnitAndPrefetch(adUnit)
+    doReturn(expected).whenever(bidManager).getBidForAdUnitAndPrefetch(adUnit, contextData)
 
-    bidManager.getBidForAdUnit(adUnit, bidListener)
+    bidManager.getBidForAdUnit(adUnit, contextData, bidListener)
 
     verify(bidListener).onBidResponse(expected)
     verifyNoMoreInteractions(bidListener)
@@ -99,10 +103,11 @@ class BidManagerTest {
 
     val adUnit = mock<AdUnit>()
     val bidListener = mock<BidListener>()
+    val contextData = mock<ContextData>()
 
-    doReturn(null).whenever(bidManager).getBidForAdUnitAndPrefetch(adUnit)
+    doReturn(null).whenever(bidManager).getBidForAdUnitAndPrefetch(adUnit, contextData)
 
-    bidManager.getBidForAdUnit(adUnit, bidListener)
+    bidManager.getBidForAdUnit(adUnit, contextData, bidListener)
 
     verify(bidListener).onNoBid()
     verifyNoMoreInteractions(bidListener)

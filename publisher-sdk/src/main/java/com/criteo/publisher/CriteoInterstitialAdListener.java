@@ -28,51 +28,19 @@ import androidx.annotation.UiThread;
 public interface CriteoInterstitialAdListener extends CriteoAdListener {
 
   /**
-   * Callback invoked when an interstitial ad is requested and valid bid is answered and creative is
-   * successfully received.
+   * Callback invoked when an interstitial ad is requested and valid bid is answered and creative is successfully
+   * received.
    * <p>
-   * From this notification, publisher are able to display the interstitial ad call by calling
-   * {@link CriteoInterstitial#show()}. It can be done directly in the implementation of this
-   * callback, or later.
+   * From this notification, publishers are able to display the interstitial ad by calling {@link
+   * CriteoInterstitial#show()}. It can be done directly in the implementation of this callback, or later.
    */
   @UiThread
   void onAdReceived(@NonNull CriteoInterstitial interstitial);
 
   /**
-   * Callback invoked when an interstitial ad is requested but none may be provided by the SDK.
-   *
-   * @param code error code indicating the reason of the failure
-   */
-  @UiThread
-  @Override
-  default void onAdFailedToReceive(@NonNull CriteoErrorCode code) {
-    // no-op by default
-  }
-
-  /**
-   * Callback invoked when an user clicks anywhere on the interstitial ad.
-   */
-  @UiThread
-  @Override
-  default void onAdClicked() {
-    // no-op by default
-  }
-
-  /**
-   * Callback invoked when an ad is opened and the user is redirected outside the application, to
-   * the product web page for instance.
-   */
-  @UiThread
-  @Override
-  default void onAdLeftApplication() {
-    // no-op by default
-  }
-
-  /**
    * Callback invoked when an interstitial ad is opened via {@link CriteoInterstitial#show()}.
    */
   @UiThread
-  @Override
   default void onAdOpened() {
     // no-op by default
   }
@@ -82,7 +50,6 @@ public interface CriteoInterstitialAdListener extends CriteoAdListener {
    * presses the back button after being redirected to an ad.
    */
   @UiThread
-  @Override
   default void onAdClosed() {
     // no-op by default
   }

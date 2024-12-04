@@ -26,7 +26,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import androidx.annotation.NonNull;
+import com.criteo.publisher.csm.Metric;
 import com.criteo.publisher.csm.MetricRequest;
+import com.criteo.publisher.logging.RemoteLogRecords;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
 import com.criteo.publisher.model.CdbRequest;
@@ -41,6 +43,8 @@ import java.io.OutputStream;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
@@ -49,7 +53,8 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class PubSdkApiTest {
 
@@ -58,6 +63,9 @@ public class PubSdkApiTest {
 
   @Rule
   public MockWebServer mockWebServer = new MockWebServer();
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @SpyBean
   private BuildConfigWrapper buildConfigWrapper;
@@ -74,24 +82,70 @@ public class PubSdkApiTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     serverUrl = new URL("http://localhost:" + mockWebServer.getPort());
 
     when(buildConfigWrapper.getCdbUrl()).thenReturn(serverUrl.toString());
     when(buildConfigWrapper.getEventUrl()).thenReturn(serverUrl.toString());
 
-    when(gdprData.consentData()).thenReturn("fake_consent_data");
-    when(gdprData.gdprApplies()).thenReturn(false);
-    when(gdprData.version()).thenReturn(1);
-    when(gdprData.toJSONObject()).thenCallRealMethod();
+    when(gdprData.getConsentData()).thenReturn("fake_consent_data");
+    when(gdprData.getGdprApplies()).thenReturn(false);
+    when(gdprData.getVersion()).thenReturn(1);
 
     api = new PubSdkApi(buildConfigWrapper, serializer);
   }
 
   @Test
+  public void postLogs_GivenSerializedRequest_SendItWithPost() throws Exception {
+    List<RemoteLogRecords> request = new ArrayList<>();
+    String json = "{\"expectedJson\": 42}";
+
+    givenSerializerWriting(request, json);
+
+    mockWebServer.enqueue(new MockResponse().setResponseCode(204));
+
+    api.postLogs(request);
+
+    RecordedRequest webRequest = mockWebServer.takeRequest();
+    assertThat(webRequest.getPath()).isEqualTo("/inapp/logs");
+    assertThat(webRequest.getMethod()).isEqualTo("POST");
+    assertThat(webRequest.getHeader("Content-Type")).isEqualTo("text/plain");
+    assertThat(webRequest.getBody().snapshot().utf8()).isEqualTo(json);
+  }
+
+  @Test
+  public void postLogs_GivenConnectionError_ThrowIOException() throws Exception {
+    List<RemoteLogRecords> request = new ArrayList<>();
+
+    givenConnectionError();
+
+    assertThatCode(() -> api.postLogs(request)).isInstanceOf(IOException.class);
+  }
+
+  @Test
+  public void postLogs_GivenHttpError_ThrowIOException() throws Exception {
+    List<RemoteLogRecords> request = new ArrayList<>();
+
+    mockWebServer.enqueue(new MockResponse().setResponseCode(400));
+
+    assertThatCode(() -> api.postLogs(request)).isInstanceOf(IOException.class);
+  }
+
+  @Test
+  public void postLogs_GivenLongRequestError_ThrowTimeoutError() throws Exception {
+    when(buildConfigWrapper.getNetworkTimeoutInMillis()).thenReturn(10);
+
+    List<RemoteLogRecords> request = new ArrayList<>();
+
+    mockWebServer.enqueue(new MockResponse()
+        .throttleBody(1, 100, TimeUnit.MILLISECONDS)
+        .setResponseCode(200));
+
+    assertThatCode(() -> api.postLogs(request)).isInstanceOf(SocketTimeoutException.class);
+  }
+
+  @Test
   public void postCsm_GivenSerializedRequest_SendItWithPost() throws Exception {
-    MetricRequest request = mock(MetricRequest.class);
+    MetricRequest request = givenMetricRequest();
     String json = "{\"expectedJson\": 42}";
 
     givenSerializerWriting(request, json);
@@ -109,7 +163,7 @@ public class PubSdkApiTest {
 
   @Test
   public void postCsm_GivenConnectionError_ThrowIOException() throws Exception {
-    MetricRequest request = mock(MetricRequest.class);
+    MetricRequest request = givenMetricRequest();
 
     givenConnectionError();
 
@@ -118,7 +172,7 @@ public class PubSdkApiTest {
 
   @Test
   public void postCsm_GivenHttpError_ThrowIOException() throws Exception {
-    MetricRequest request = mock(MetricRequest.class);
+    MetricRequest request = givenMetricRequest();
 
     mockWebServer.enqueue(new MockResponse().setResponseCode(400));
 
@@ -129,7 +183,7 @@ public class PubSdkApiTest {
   public void postCsm_GivenLongRequestError_ThrowTimeoutError() throws Exception {
     when(buildConfigWrapper.getNetworkTimeoutInMillis()).thenReturn(10);
 
-    MetricRequest request = mock(MetricRequest.class);
+    MetricRequest request = givenMetricRequest();
 
     mockWebServer.enqueue(new MockResponse()
         .throttleBody(1, 100, TimeUnit.MILLISECONDS)
@@ -142,7 +196,7 @@ public class PubSdkApiTest {
   public void postAppEvent_GivenSenderId_SendGetRequest() throws Exception {
     mockWebServer.enqueue(new MockResponse());
 
-    api.postAppEvent(42, "", null, "", 0, "", gdprData);
+    api.postAppEvent(42, "", null, "", 0, "", "fake_consent_data");
 
     RecordedRequest request = mockWebServer.takeRequest();
     assertThat(request.getRequestUrl().encodedPath()).isEqualTo("/appevent/v1/42");
@@ -154,21 +208,21 @@ public class PubSdkApiTest {
   public void postAppEvent_GivenRequest_SendThemInQueryString() throws Exception {
     mockWebServer.enqueue(new MockResponse());
 
-    api.postAppEvent(42, "myApp", "myGaid", "myEvent", 1337, "", gdprData);
+    api.postAppEvent(42, "myApp", "myGaid", "myEvent", 1337, "", "fake_consent_data");
 
     RecordedRequest request = mockWebServer.takeRequest();
     assertThat(request.getRequestUrl().queryParameter("appId")).isEqualTo("myApp");
     assertThat(request.getRequestUrl().queryParameter("gaid")).isEqualTo("myGaid");
     assertThat(request.getRequestUrl().queryParameter("eventType")).isEqualTo("myEvent");
     assertThat(request.getRequestUrl().queryParameter("limitedAdTracking")).isEqualTo("1337");
-    assertThat(request.getRequestUrl().queryParameter("gdprString")).isEqualTo("eyJjb25zZW50RGF0YSI6ImZha2VfY29uc2VudF9kYXRhIiwiZ2RwckFwcGxpZXMiOmZhbHNlLCJ2ZXJzaW9uIjoxfQ==");
+    assertThat(request.getRequestUrl().queryParameter("gdpr_consent")).isEqualTo("fake_consent_data");
   }
 
   @Test
   public void postAppEvent_GivenNoGaid_IsNotPutInQueryString() throws Exception {
     mockWebServer.enqueue(new MockResponse());
 
-    api.postAppEvent(42, "", null, "", 0, "", gdprData);
+    api.postAppEvent(42, "", null, "", 0, "", gdprData.getConsentData());
 
     RecordedRequest request = mockWebServer.takeRequest();
     assertThat(request.getRequestUrl().queryParameter("gaid")).isNull();
@@ -181,14 +235,14 @@ public class PubSdkApiTest {
     api.postAppEvent(42, "", "myGaid", "", 0, "", null);
 
     RecordedRequest request = mockWebServer.takeRequest();
-    assertThat(request.getRequestUrl().queryParameter("gdprString")).isNull();
+    assertThat(request.getRequestUrl().queryParameter("gdpr_consent")).isNull();
   }
 
   @Test
   public void postAppEvent_GivenUserAgent_SetItInHttpHeader() throws Exception {
     mockWebServer.enqueue(new MockResponse());
 
-    api.postAppEvent(42, "", null, "", 0, "myUserAgent", gdprData);
+    api.postAppEvent(42, "", null, "", 0, "myUserAgent", "fake_consent_data");
 
     RecordedRequest request = mockWebServer.takeRequest();
     assertThat(request.getHeader("User-Agent")).isEqualTo("myUserAgent");
@@ -198,7 +252,7 @@ public class PubSdkApiTest {
   public void postAppEvent_GivenConnectionError_SetItInHttpHeader() throws Exception {
     givenConnectionError();
 
-    assertThatCode(() -> api.postAppEvent(42, "", null, "", 0, "myUserAgent", gdprData))
+    assertThatCode(() -> api.postAppEvent(42, "", null, "", 0, "myUserAgent", "fake_consent_data"))
         .isInstanceOf(IOException.class);
   }
 
@@ -206,7 +260,7 @@ public class PubSdkApiTest {
   public void postAppEvent_GivenHttpError_ThrowException() throws Exception {
     mockWebServer.enqueue(new MockResponse().setResponseCode(400));
 
-    assertThatCode(() -> api.postAppEvent(42, "", null, "", 0, "myUserAgent", gdprData))
+    assertThatCode(() -> api.postAppEvent(42, "", null, "", 0, "myUserAgent", gdprData.getConsentData()))
         .isInstanceOf(IOException.class);
   }
 
@@ -344,12 +398,13 @@ public class PubSdkApiTest {
 
   @Test
   public void loadConfig_GivenInput_SendGetRequestWithQueryParameters() throws Exception {
-    RemoteConfigRequest request = RemoteConfigRequest.create(
+    RemoteConfigRequest request = new RemoteConfigRequest(
         "myCpId",
+        null,
         "myAppId",
         "myVersion",
         456,
-        "myDeviceId"
+        "android"
     );
 
     String expectedJson = ""
@@ -358,7 +413,38 @@ public class PubSdkApiTest {
         + "  \"bundleId\" : \"myAppId\",\n"
         + "  \"sdkVersion\" : \"myVersion\",\n"
         + "  \"rtbProfileId\": 456,\n"
-        + "  \"deviceId\": \"myDeviceId\""
+        + "  \"deviceOs\": \"android\""
+        + "}";
+
+    mockWebServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
+
+    api.loadConfig(request);
+
+    RecordedRequest webRequest = mockWebServer.takeRequest();
+    assertThat(webRequest.getPath()).isEqualTo("/config/app");
+    assertThat(webRequest.getMethod()).isEqualTo("POST");
+    assertThat(webRequest.getBody().snapshot().utf8()).isEqualToIgnoringWhitespace(expectedJson);
+  }
+
+  @Test
+  public void loadConfig_GivenInput_SendGetRequestWithInventoryGroupId() throws Exception {
+    RemoteConfigRequest request = new RemoteConfigRequest(
+        "myCpId",
+        "myInventoryGroupId",
+        "myAppId",
+        "myVersion",
+        456,
+        "android"
+    );
+
+    String expectedJson = ""
+        + "{\n"
+        + "  \"cpId\" : \"myCpId\",\n"
+        + "  \"inventoryGroupId\" : \"myInventoryGroupId\",\n"
+        + "  \"bundleId\" : \"myAppId\",\n"
+        + "  \"sdkVersion\" : \"myVersion\",\n"
+        + "  \"rtbProfileId\": 456,\n"
+        + "  \"deviceOs\": \"android\""
         + "}";
 
     mockWebServer.enqueue(new MockResponse().setResponseCode(200).setBody("{}"));
@@ -413,4 +499,7 @@ public class PubSdkApiTest {
     mockWebServer.shutdown();
   }
 
+  private MetricRequest givenMetricRequest() {
+    return new MetricRequest(new ArrayList<Metric>(), "1.2.3", 88);
+  }
 }

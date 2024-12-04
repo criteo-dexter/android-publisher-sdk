@@ -16,12 +16,13 @@
 
 package com.criteo.testapp;
 
+import static com.criteo.testapp.PubSdkDemoApplication.CONTEXT_DATA;
+import static com.criteo.testapp.PubSdkDemoApplication.INTERSTITIAL;
 import static com.criteo.testapp.PubSdkDemoApplication.INTERSTITIAL_IBV_DEMO;
 import static com.criteo.testapp.PubSdkDemoApplication.NATIVE;
 
 import android.os.Bundle;
 import android.util.Log;
-import android.widget.Button;
 import android.widget.FrameLayout;
 import androidx.appcompat.app.AppCompatActivity;
 import com.criteo.publisher.CriteoBannerView;
@@ -34,18 +35,12 @@ import com.criteo.testapp.listener.TestAppBannerAdListener;
 import com.criteo.testapp.listener.TestAppInterstitialAdListener;
 import com.criteo.testapp.listener.TestAppNativeAdListener;
 
-
 public class StandaloneActivity extends AppCompatActivity {
 
   private static final String TAG = StandaloneActivity.class.getSimpleName();
 
-  private static final InterstitialAdUnit INTERSTITIAL = new InterstitialAdUnit(
-      "/140800857/Endeavour_Interstitial_320x480");
-
   private CriteoBannerView criteoBannerView;
   private CriteoNativeLoader nativeLoader;
-  private Button btnShowInterstitial;
-  private Button btnShowInterstitialIbv;
   private FrameLayout nativeAdContainer;
 
   @Override
@@ -54,8 +49,6 @@ public class StandaloneActivity extends AppCompatActivity {
     setContentView(R.layout.activity_stand_alone);
     MockedIntegrationRegistry.force(Integration.STANDALONE);
 
-    btnShowInterstitial = findViewById(R.id.buttonStandAloneInterstitial);
-    btnShowInterstitialIbv = findViewById(R.id.buttonStandAloneInterstitialIbv);
     criteoBannerView = findViewById(R.id.criteoBannerView);
     nativeAdContainer = findViewById(R.id.nativeAdContainer);
 
@@ -70,11 +63,13 @@ public class StandaloneActivity extends AppCompatActivity {
 
     findViewById(R.id.buttonStandAloneBanner).setOnClickListener(v -> loadBannerAd());
     findViewById(R.id.buttonStandAloneNative).setOnClickListener(v -> loadNative());
+    findViewById(R.id.buttonStandAloneInterstitial).setOnClickListener(v -> loadInterstitial(INTERSTITIAL));
+    findViewById(R.id.buttonStandAloneInterstitialIbv).setOnClickListener(v -> loadInterstitial(INTERSTITIAL_IBV_DEMO));
   }
 
   private void loadBannerAd() {
     Log.d(TAG, "Banner Requested");
-    criteoBannerView.loadAd();
+    criteoBannerView.loadAd(CONTEXT_DATA);
   }
 
   @Override
@@ -85,36 +80,18 @@ public class StandaloneActivity extends AppCompatActivity {
     }
   }
 
-  @Override
-  protected void onResume() {
-    super.onResume();
-    btnShowInterstitial.setEnabled(false);
-    btnShowInterstitialIbv.setEnabled(false);
-    loadInterstitial(INTERSTITIAL, btnShowInterstitial);
-    loadInterstitial(INTERSTITIAL_IBV_DEMO, btnShowInterstitialIbv);
-  }
-
-  private void showInterstitial(CriteoInterstitial interstitial) {
-    if (interstitial.isAdLoaded()) {
-      interstitial.show();
-    }
-  }
-
   private void loadNative() {
-    nativeLoader.loadAd();
+    nativeLoader.loadAd(CONTEXT_DATA);
   }
 
-  private void loadInterstitial(InterstitialAdUnit adUnit, Button btnShow) {
+  private void loadInterstitial(InterstitialAdUnit adUnit) {
     String prefix = "Standalone " + adUnit.getAdUnitId();
 
     CriteoInterstitial criteoInterstitial = new CriteoInterstitial(adUnit);
-    criteoInterstitial.setCriteoInterstitialAdListener(
-        new TestAppInterstitialAdListener(TAG, prefix, btnShow));
-
-    btnShow.setOnClickListener(v -> showInterstitial(criteoInterstitial));
+    criteoInterstitial.setCriteoInterstitialAdListener(new TestAppInterstitialAdListener(TAG, prefix));
 
     Log.d(TAG, prefix + "Interstitial Requested");
-    criteoInterstitial.loadAd();
+    criteoInterstitial.loadAd(CONTEXT_DATA);
   }
 
 }

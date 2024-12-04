@@ -23,12 +23,23 @@ import com.criteo.publisher.mock.SpyBean
 import com.criteo.publisher.model.Config
 import com.criteo.publisher.network.PubSdkApi
 import com.criteo.publisher.util.BuildConfigWrapper
-import com.nhaarman.mockitokotlin2.*
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.clearInvocations
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doNothing
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.never
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 import java.io.IOException
 
 class MetricSendingQueueConsumerTest {
@@ -36,6 +47,10 @@ class MetricSendingQueueConsumerTest {
   @Rule
   @JvmField
   val mockedDependenciesRule = MockedDependenciesRule()
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
 
   @Mock
   private lateinit var queue: MetricSendingQueue
@@ -55,8 +70,6 @@ class MetricSendingQueueConsumerTest {
 
   @Before
   fun setUp() {
-    MockitoAnnotations.initMocks(this)
-
     buildConfigWrapper.stub {
       on { preconditionThrowsOnException() } doReturn false
     }
@@ -78,8 +91,8 @@ class MetricSendingQueueConsumerTest {
 
     consumer.sendMetricBatch()
 
-    verifyZeroInteractions(queue)
-    verifyZeroInteractions(api)
+    verifyNoInteractions(queue)
+    verifyNoInteractions(api)
   }
 
   @Test
@@ -93,8 +106,8 @@ class MetricSendingQueueConsumerTest {
 
     consumer.sendMetricBatch()
 
-    verifyZeroInteractions(queue)
-    verifyZeroInteractions(api)
+    verifyNoInteractions(queue)
+    verifyNoInteractions(api)
   }
 
   @Test
@@ -145,7 +158,7 @@ class MetricSendingQueueConsumerTest {
       on { poll(42) } doReturn listOf(metric1, metric2)
     }
 
-    val expectedRequest = MetricRequest.create(
+    val expectedRequest = MetricRequest(
         listOf(metric1, metric2),
         "1.2.3",
         1337
@@ -198,13 +211,13 @@ class MetricSendingQueueConsumerTest {
       on { poll(42) } doReturn listOf(metric1, metric2, metric3, metric4)
     }
 
-    val expectedRequest1 = MetricRequest.create(
+    val expectedRequest1 = MetricRequest(
         listOf(metric1, metric3),
         "1.2.3",
         FALLBACK.profileId
     )
 
-    val expectedRequest2 = MetricRequest.create(
+    val expectedRequest2 = MetricRequest(
         listOf(metric2, metric4),
         "1.2.3",
         1337
@@ -232,5 +245,4 @@ class MetricSendingQueueConsumerTest {
     verify(api).postCsm(any())
     executor.verifyExpectations()
   }
-
 }

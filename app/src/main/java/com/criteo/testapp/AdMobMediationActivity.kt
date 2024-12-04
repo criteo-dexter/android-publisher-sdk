@@ -18,7 +18,6 @@ package com.criteo.testapp
 
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.ImageView
@@ -31,23 +30,20 @@ import com.google.android.gms.ads.AdLoader
 import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.AdSize
 import com.google.android.gms.ads.AdView
-import com.google.android.gms.ads.InterstitialAd
 import com.google.android.gms.ads.MobileAds
 import com.google.android.gms.ads.RequestConfiguration
-import com.google.android.gms.ads.formats.UnifiedNativeAd
-import com.google.android.gms.ads.formats.UnifiedNativeAdView
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+import com.google.android.gms.ads.nativead.NativeAd
+import com.google.android.gms.ads.nativead.NativeAdView
+import java.security.MessageDigest
 
 class AdMobMediationActivity : AppCompatActivity() {
 
   private companion object {
-    /** This AdMob AdUnit is mapped to this Criteo AdUnit: /140800857/Endeavour_320x50 */
-    const val ADMOB_BANNER = "ca-app-pub-8459323526901202/2832836926"
-
-    /** This AdMob AdUnit is mapped to this Criteo AdUnit: /140800857/Endeavour_320x480 */
-    const val ADMOB_INTERSTITIAL = "ca-app-pub-8459323526901202/6462812944"
-
-    /** This AdMob AdUnit is mapped to this Criteo AdUnit: /140800857/Endeavour_Native */
-    const val ADMOB_NATIVE = "ca-app-pub-8459323526901202/2863808899"
+    const val ADMOB_BANNER = "ca-app-pub-3940256099942544/9214589741"
+    const val ADMOB_INTERSTITIAL = "ca-app-pub-3940256099942544/1033173712"
+    const val ADMOB_NATIVE = "ca-app-pub-3940256099942544/2247696110"
   }
 
   private val tag = javaClass.simpleName
@@ -70,18 +66,22 @@ class AdMobMediationActivity : AppCompatActivity() {
   private fun initializeAdMobSdk() {
     // Always declare this device as a test one. This is not necessary for emulator, but it is for
     // real device.
+    // Google requires hashed(MD5) DEVICE_ID
     val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-    MobileAds.initialize(this)
+        .toMD5()
+        .uppercase()
     MobileAds.setRequestConfiguration(
         RequestConfiguration.Builder()
             .setTestDeviceIds(listOf(deviceId))
+            .setTagForChildDirectedTreatment(CoppaActivity.currentCoppaFlag.toGoogleCoppaFlag())
             .build()
     )
+    MobileAds.initialize(this)
   }
 
   private fun loadBanner() {
     val adView = AdView(this)
-    adView.adSize = AdSize.BANNER
+    adView.setAdSize(AdSize.BANNER)
     adView.adUnitId = ADMOB_BANNER
     adView.adListener = TestAppDfpAdListener(tag, "Banner")
 
@@ -93,28 +93,23 @@ class AdMobMediationActivity : AppCompatActivity() {
   }
 
   private fun loadInterstitial() {
-    val interstitialAd = InterstitialAd(this)
-    interstitialAd.adUnitId = ADMOB_INTERSTITIAL
-    interstitialAd.adListener = object : TestAppDfpAdListener(tag, "Interstitial") {
-      override fun onAdLoaded() {
-        super.onAdLoaded()
-
-        if (interstitialAd.isLoaded) {
-          interstitialAd.show()
-        } else {
-          Log.d(tag, "The interstitial wasn't loaded yet.")
+    val activity = this
+    InterstitialAd.load(
+        activity,
+        ADMOB_INTERSTITIAL,
+        AdRequest.Builder().build(),
+        object : InterstitialAdLoadCallback() {
+          override fun onAdLoaded(interstitialAd: InterstitialAd) {
+            interstitialAd.show(activity)
+          }
         }
-      }
-    }
-
-    val adRequest = AdRequest.Builder().build()
-    interstitialAd.loadAd(adRequest)
+    )
   }
 
   private fun loadNative() {
     val adLoader = AdLoader.Builder(this, ADMOB_NATIVE)
-        .forUnifiedNativeAd {
-          val adView = layoutInflater.inflate(R.layout.native_admob_ad, null) as UnifiedNativeAdView
+        .forNativeAd {
+          val adView = layoutInflater.inflate(R.layout.native_admob_ad, null) as NativeAdView
           it.renderInView(adView)
           adLayout.removeAllViews()
           adLayout.addView(adView)
@@ -126,18 +121,36 @@ class AdMobMediationActivity : AppCompatActivity() {
     adLoader.loadAd(adRequest)
   }
 
-  private fun UnifiedNativeAd.renderInView(nativeView: UnifiedNativeAdView) {
+  private fun NativeAd.renderInView(nativeView: NativeAdView) {
     nativeView.findViewById<TextView>(R.id.ad_headline).text = headline
     nativeView.findViewById<TextView>(R.id.ad_body).text = body
     nativeView.findViewById<TextView>(R.id.ad_price).text = price
     nativeView.findViewById<TextView>(R.id.ad_call_to_action).text = callToAction
     nativeView.findViewById<TextView>(R.id.ad_advertiser).text = advertiser
     nativeView.findViewById<TextView>(R.id.ad_store).text = extras["crtn_advdomain"] as String?
-    nativeView.findViewById<ImageView>(R.id.ad_app_icon).setImageDrawable(icon.drawable)
+    nativeView.findViewById<ImageView>(R.id.ad_app_icon).setImageDrawable(icon?.drawable)
 
     nativeView.mediaView = nativeView.findViewById(R.id.ad_media)
-    nativeView.mediaView.setMediaContent(mediaContent)
+    mediaContent?.let { nativeView.mediaView?.setMediaContent(it) }
 
     nativeView.setNativeAd(this)
+  }
+
+  private fun Boolean?.toGoogleCoppaFlag(): Int {
+    return when (this) {
+      true -> RequestConfiguration.TAG_FOR_CHILD_DIRECTED_TREATMENT_TRUE
+      false -> RequestConfiguration.TAG_FOR_CHILD_DIRECTED_TREATMENT_FALSE
+      else -> RequestConfiguration.TAG_FOR_CHILD_DIRECTED_TREATMENT_UNSPECIFIED
+    }
+  }
+
+  private fun String.toMD5(): String {
+    return trim().run {
+      MessageDigest.getInstance("MD5")
+          .digest(toByteArray())
+          .joinToString("") {
+            "%02x".format(it)
+          }
+    }
   }
 }

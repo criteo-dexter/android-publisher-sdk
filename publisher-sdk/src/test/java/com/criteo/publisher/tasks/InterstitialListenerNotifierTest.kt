@@ -27,30 +27,45 @@ import com.criteo.publisher.CriteoListenerCode.INVALID_CREATIVE
 import com.criteo.publisher.CriteoListenerCode.OPEN
 import com.criteo.publisher.CriteoListenerCode.VALID
 import com.criteo.publisher.concurrent.DirectMockRunOnUiThreadExecutor
-import com.nhaarman.mockitokotlin2.any
-import com.nhaarman.mockitokotlin2.doAnswer
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.doThrow
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.whenever
+import com.criteo.publisher.mock.MockedDependenciesRule
+import com.criteo.publisher.mock.SpyBean
+import com.criteo.publisher.util.BuildConfigWrapper
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.After
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import java.lang.ref.Reference
+import java.lang.ref.WeakReference
 
 class InterstitialListenerNotifierTest {
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
+
+  @Rule
+  @JvmField
+  var mockedDependenciesRule = MockedDependenciesRule()
 
   @Mock
   private lateinit var interstitial: CriteoInterstitial
 
   @Mock
-  private lateinit var listenerRef: Reference<CriteoInterstitialAdListener>
-
-  @Mock
   private lateinit var listener: CriteoInterstitialAdListener
+
+  @SpyBean
+  private lateinit var buildConfigWrapper: BuildConfigWrapper
+
+  private lateinit var listenerRef: Reference<CriteoInterstitialAdListener>
 
   private val runOnUiThreadExecutor = DirectMockRunOnUiThreadExecutor()
 
@@ -58,15 +73,7 @@ class InterstitialListenerNotifierTest {
 
   @Before
   fun setUp() {
-    MockitoAnnotations.initMocks(this)
-
     setUpExpectingListenerToBeInvokedInExecutor()
-
-    listenerNotifier = InterstitialListenerNotifier(
-        interstitial,
-        listenerRef,
-        runOnUiThreadExecutor
-    )
   }
 
   @After
@@ -143,6 +150,9 @@ class InterstitialListenerNotifierTest {
   @Test
   fun notifyFor_GivenThrowingListener_DoNothing() {
     givenThrowingListener()
+    // by default exception is thrown in debug mode but we want to test
+    // if it is working fine when debug throw disabled
+    doReturn(false).whenever(buildConfigWrapper).preconditionThrowsOnException()
 
     CriteoListenerCode.values().forEach {
       assertThatCode {
@@ -152,14 +162,26 @@ class InterstitialListenerNotifierTest {
   }
 
   private fun givenReachableListenerReference() {
-    whenever(listenerRef.get()).doReturn(listener)
+    listenerRef = WeakReference(listener)
+    createInterstitialListenerNotifier()
   }
 
   private fun givenUnreachableListenerReference() {
-    whenever(listenerRef.get()).doReturn(null)
+    listenerRef = WeakReference(null)
+    createInterstitialListenerNotifier()
+  }
+
+  private fun createInterstitialListenerNotifier() {
+    listenerNotifier = InterstitialListenerNotifier(
+        interstitial,
+        listenerRef,
+        runOnUiThreadExecutor
+    )
   }
 
   private fun givenThrowingListener() {
+    givenReachableListenerReference()
+
     doThrow(RuntimeException::class).whenever(listener).onAdReceived(any())
     doThrow(RuntimeException::class).whenever(listener).onAdFailedToReceive(any())
     doThrow(RuntimeException::class).whenever(listener).onAdClicked()

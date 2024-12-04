@@ -3,25 +3,11 @@
   xmlns:tools="http://schemas.android.com/tools"
   package="com.criteo.publisher.tests">
 
-  <!--
-  MoPub requires minSdk=19, while the SDK had minSdk=16
-  See https://developer.android.com/studio/build/manifest-merge#override_uses-sdk_for_imported_libraries
-  -->
-  <uses-sdk tools:overrideLibrary="com.criteo.mediation.mopub,
-      com.mopub.mobileads.base,
-      com.mopub.mobileads.banner,
-      com.mopub.mobileads.interstitial,
-      com.mopub.mobileads.native_static,
-      androidx.media2.common,
-      androidx.media2.player,
-      androidx.media2.session,
-      androidx.media2.widget" />
-
   <application>
     <activity android:name="com.criteo.publisher.test.activity.DummyActivity"/>
     <activity android:name="com.criteo.publisher.activity.TestNativeActivity"/>
 
-    <activity android:name="com.criteo.publisher.activity.DummyAdActivity">
+    <activity android:name="com.criteo.publisher.activity.DummyAdActivity" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.VIEW"/>
 

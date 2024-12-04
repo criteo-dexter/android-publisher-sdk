@@ -16,43 +16,44 @@
 
 package com.criteo.publisher.network;
 
-import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.VisibleForTesting;
 import com.criteo.publisher.csm.MetricRequest;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
+import com.criteo.publisher.logging.RemoteLogRecords;
 import com.criteo.publisher.model.CdbRequest;
 import com.criteo.publisher.model.CdbResponse;
 import com.criteo.publisher.model.RemoteConfigRequest;
 import com.criteo.publisher.model.RemoteConfigResponse;
-import com.criteo.publisher.privacy.gdpr.GdprData;
-import com.criteo.publisher.util.Base64;
 import com.criteo.publisher.util.BuildConfigWrapper;
 import com.criteo.publisher.util.JsonSerializer;
 import com.criteo.publisher.util.StreamUtil;
 import com.criteo.publisher.util.TextUtils;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.Charset;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 public class PubSdkApi {
 
-  private static final String TAG = PubSdkApi.class.getSimpleName();
-
   private static final String APP_ID = "appId";
   private static final String GAID = "gaid";
   private static final String EVENT_TYPE = "eventType";
   private static final String LIMITED_AD_TRACKING = "limitedAdTracking";
-  private static final String GDPR_STRING = "gdprString";
+  private static final String GDPR_CONSENT = "gdpr_consent";
+
+  @NonNull
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   @NonNull
   private final BuildConfigWrapper buildConfigWrapper;
@@ -83,11 +84,17 @@ public class PubSdkApi {
   public CdbResponse loadCdb(@NonNull CdbRequest request, @NonNull String userAgent) throws Exception {
     URL url = new URL(buildConfigWrapper.getCdbUrl() + "/inapp/v2");
     HttpURLConnection urlConnection = prepareConnection(url, userAgent, "POST");
-    writePayload(urlConnection, request);
+    urlConnection.setDoOutput(true);
+    try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+      jsonSerializer.write(request, baos);
+      logger.log(NetworkLogMessage.onCdbCallStarted(baos.toString("UTF-8")));
+      urlConnection.getOutputStream().write(baos.toByteArray());
+    }
 
     try (InputStream inputStream = readResponseStreamIfSuccess(urlConnection)) {
-      JSONObject result = readJson(inputStream);
-      return CdbResponse.fromJson(result);
+      String response = StreamUtil.readStream(inputStream);
+      logger.log(NetworkLogMessage.onCdbCallFinished(response));
+      return CdbResponse.fromJson(readJson(response));
     }
   }
 
@@ -99,7 +106,7 @@ public class PubSdkApi {
       @NonNull String eventType,
       int limitedAdTracking,
       @NonNull String userAgent,
-      @Nullable GdprData gdprData
+      @Nullable String gdprConsentData
   ) throws Exception {
     Map<String, String> parameters = new HashMap<>();
     parameters.put(APP_ID, appId);
@@ -112,11 +119,8 @@ public class PubSdkApi {
     parameters.put(EVENT_TYPE, eventType);
     parameters.put(LIMITED_AD_TRACKING, String.valueOf(limitedAdTracking));
 
-    if (gdprData != null) {
-      String gdprString = getGdprDataStringBase64(gdprData);
-      if (gdprString != null && !gdprString.isEmpty()) {
-        parameters.put(GDPR_STRING, gdprString);
-      }
+    if (gdprConsentData != null) {
+        parameters.put(GDPR_CONSENT, gdprConsentData);
     }
 
     String query = "/appevent/v1/" + senderId + "?" + getParamsString(parameters);
@@ -126,41 +130,21 @@ public class PubSdkApi {
     }
   }
 
-  /**
-   * @return a {@link String} representing the base64 encoded JSON string for GdprData object
-   */
-  @Nullable
-  @VisibleForTesting
-  String getGdprDataStringBase64(@NonNull GdprData gdprData) {
-    String gdprDataStr = null;
-    try {
-      gdprDataStr = gdprData.toJSONObject().toString();
-    } catch (JSONException e) {
-      Log.d(TAG, "Unable to convert gdprString to JSONObject when sending to GUM:" + e.getMessage());
-    }
-
-    if (gdprDataStr == null) {
-      return null;
-    }
-
-    String encoded = null;
-
-    try {
-      encoded = Base64.encodeToString(gdprDataStr.getBytes("UTF-8"), Base64.NO_WRAP);
-    } catch (UnsupportedEncodingException e) {
-      Log.d(TAG, "Unable to encode gdprString to base64:" + e.getMessage());
-    }
-
-    return encoded;
-  }
-
   @Nullable
   public InputStream executeRawGet(URL url) throws IOException {
     return executeRawGet(url, null);
   }
 
   public void postCsm(@NonNull MetricRequest request) throws IOException {
-    URL url = new URL(buildConfigWrapper.getCdbUrl() + "/csm");
+    postToCdb("/csm", request);
+  }
+
+  public void postLogs(@NonNull List<RemoteLogRecords> request) throws IOException {
+    postToCdb("/inapp/logs", request);
+  }
+
+  private void postToCdb(@NonNull String apiPath, @NonNull Object request) throws IOException {
+    URL url = new URL(buildConfigWrapper.getCdbUrl() + apiPath);
     HttpURLConnection urlConnection = prepareConnection(url, null, "POST");
     writePayload(urlConnection, request);
     readResponseStreamIfSuccess(urlConnection).close();
@@ -199,22 +183,14 @@ public class PubSdkApi {
   @NonNull
   private static JSONObject readJson(@NonNull InputStream inputStream) throws IOException, JSONException {
     String response = StreamUtil.readStream(inputStream);
-    if (!TextUtils.isEmpty(response)) {
-      return new JSONObject(response);
-    }
-    return new JSONObject();
+    return readJson(response);
   }
 
-  private static void writePayload(
-      @NonNull HttpURLConnection urlConnection,
-      @NonNull JSONObject requestJson) throws IOException {
-    byte[] payload = requestJson.toString().getBytes(Charset.forName("UTF-8"));
-
-    urlConnection.setDoOutput(true);
-    try (OutputStream outputStream = urlConnection.getOutputStream()) {
-      outputStream.write(payload);
-      outputStream.flush();
+  private static JSONObject readJson(@NonNull String json) throws JSONException {
+    if (TextUtils.isEmpty(json)) {
+      return new JSONObject();
     }
+    return new JSONObject(json);
   }
 
   private void writePayload(
@@ -226,7 +202,7 @@ public class PubSdkApi {
     }
   }
 
-  private static String getParamsString(Map<String, String> params) {
+  private String getParamsString(Map<String, String> params) {
     StringBuilder queryString = new StringBuilder();
     try {
       for (Map.Entry<String, String> entry : params.entrySet()) {
@@ -236,7 +212,7 @@ public class PubSdkApi {
         queryString.append("&");
       }
     } catch (Exception e) {
-      Log.e(TAG, e.getMessage());
+      logger.debug("Impossible to encode params string", e);
     }
 
     // drop the last '&' if result is not empty

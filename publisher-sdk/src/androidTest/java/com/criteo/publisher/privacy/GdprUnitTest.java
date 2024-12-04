@@ -16,45 +16,32 @@
 
 package com.criteo.publisher.privacy;
 
-import android.content.Context;
 import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
-import androidx.test.runner.AndroidJUnit4;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.privacy.gdpr.GdprData;
+import com.criteo.publisher.util.SharedPreferencesFactory;
 import javax.inject.Inject;
-import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.runner.RunWith;
 
-@RunWith(AndroidJUnit4.class)
 public class GdprUnitTest {
 
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
-
-  @Inject
-  private Context context;
 
   private SharedPreferences.Editor editor;
 
   @Inject
   private UserPrivacyUtil userPrivacyUtil;
 
+  @Inject
+  private SharedPreferencesFactory sharedPreferencesFactory;
+
   @Before
   public void setup() {
-    editor = PreferenceManager.getDefaultSharedPreferences(context).edit();
-  }
-
-  @After
-  public void tearDown() {
-    // Remove all properties to make sure every test case starts with its own properties
-    editor.remove("IABConsent_SubjectToGDPR");
-    editor.remove("IABConsent_ConsentString");
-    editor.apply();
+    editor = sharedPreferencesFactory.getApplication().edit();
   }
 
   private void initializeGdprParameters(String subjectToGdpr, String consentData) {
@@ -72,8 +59,8 @@ public class GdprUnitTest {
 
     initializeGdprParameters(subjectToGdpr, consentData);
     GdprData gdprData = userPrivacyUtil.getGdprData();
-    Assert.assertEquals(consentData, gdprData.consentData());
-    Assert.assertEquals(true, gdprData.gdprApplies());
+    Assert.assertEquals(consentData, gdprData.getConsentData());
+    Assert.assertEquals(true, gdprData.getGdprApplies());
   }
 
   @Test
@@ -84,8 +71,8 @@ public class GdprUnitTest {
 
     GdprData gdprData = userPrivacyUtil.getGdprData();
 
-    Assert.assertEquals(consentData, gdprData.consentData());
-    Assert.assertEquals(true, gdprData.gdprApplies());
+    Assert.assertEquals(consentData, gdprData.getConsentData());
+    Assert.assertEquals(true, gdprData.getGdprApplies());
   }
 
   @Test
@@ -96,8 +83,8 @@ public class GdprUnitTest {
 
     GdprData gdprData = userPrivacyUtil.getGdprData();
 
-    Assert.assertEquals(consentData, gdprData.consentData());
-    Assert.assertEquals(true, gdprData.gdprApplies());
+    Assert.assertEquals(consentData, gdprData.getConsentData());
+    Assert.assertEquals(true, gdprData.getGdprApplies());
   }
 
   @Test
@@ -108,8 +95,8 @@ public class GdprUnitTest {
 
     GdprData gdprData = userPrivacyUtil.getGdprData();
 
-    Assert.assertEquals(consentData, gdprData.consentData());
-    Assert.assertEquals(true, gdprData.gdprApplies());
+    Assert.assertEquals(consentData, gdprData.getConsentData());
+    Assert.assertEquals(true, gdprData.getGdprApplies());
   }
 
   @Test
@@ -121,5 +108,11 @@ public class GdprUnitTest {
     GdprData gdprData = userPrivacyUtil.getGdprData();
 
     Assert.assertNotNull(gdprData);
+  }
+
+  @Test
+  public void testGdprConsentData() {
+    initializeGdprParameters("1", "fake_gdpr_consent_data");;
+    Assert.assertEquals("fake_gdpr_consent_data", userPrivacyUtil.getGdprConsentData());
   }
 }

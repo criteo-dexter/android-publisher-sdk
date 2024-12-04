@@ -23,15 +23,29 @@ import com.criteo.publisher.CriteoNotInitializedException
 import com.criteo.publisher.CriteoUtil.clearCriteo
 import com.criteo.publisher.CriteoUtil.givenInitializedCriteo
 import com.criteo.publisher.MockableDependencyProvider
-import com.nhaarman.mockitokotlin2.*
+import com.criteo.publisher.mock.MockedDependenciesRule
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
+import org.mockito.kotlin.whenever
 
 class AdChoiceOverlayNativeRendererTest {
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
+
+  @Rule
+  @JvmField
+  var mockedDependenciesRule = MockedDependenciesRule()
 
   @Mock
   private lateinit var delegate: CriteoNativeRenderer
@@ -43,13 +57,11 @@ class AdChoiceOverlayNativeRendererTest {
 
   @Before
   fun setUp() {
-    MockitoAnnotations.initMocks(this)
-
     renderer = AdChoiceOverlayNativeRenderer(delegate, adChoiceOverlay)
   }
 
   @Test
-  fun moPubAdapterConstructor_GivenSdkNotInitialized_ThrowException() {
+  fun mediationAdapterConstructor_GivenSdkNotInitialized_ThrowException() {
     clearCriteo()
     MockableDependencyProvider.setInstance(null)
 
@@ -59,7 +71,7 @@ class AdChoiceOverlayNativeRendererTest {
   }
 
   @Test
-  fun moPubAdapterConstructor_GivenSdkInitialized_DoNotThrowException() {
+  fun mediationAdapterConstructor_GivenSdkInitialized_DoNotThrowException() {
     givenInitializedCriteo()
 
     assertThatCode {
@@ -106,7 +118,6 @@ class AdChoiceOverlayNativeRendererTest {
 
     renderer.renderNativeView(helper, nativeView, nativeAd)
 
-    verifyZeroInteractions(delegate)
+    verifyNoInteractions(delegate)
   }
-
 }

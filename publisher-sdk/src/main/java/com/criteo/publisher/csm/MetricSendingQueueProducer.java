@@ -27,7 +27,7 @@ public class MetricSendingQueueProducer {
     this.queue = queue;
   }
 
-  void pushAllInQueue(@NonNull MetricRepository repository) {
+  public void pushAllInQueue(@NonNull MetricRepository repository) {
     for (Metric metric : repository.getAllStoredMetrics()) {
       pushInQueue(repository, metric.getImpressionId());
     }

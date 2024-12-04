@@ -21,22 +21,26 @@ import com.criteo.publisher.DependencyProvider
 import com.criteo.publisher.annotation.OpenForTesting
 import com.criteo.publisher.model.nativeads.NativeAssets
 import com.criteo.publisher.util.URLUtil
-import com.google.gson.annotations.SerializedName
+import com.squareup.moshi.Json
+import com.squareup.moshi.JsonClass
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
 
 @OpenForTesting
+@JsonClass(generateAdapter = true)
 data class CdbResponseSlot(
-    @SerializedName("impId") val impressionId: String? = null,
-    @SerializedName("placementId") val placementId: String? = null,
-    @SerializedName("zoneId") val zoneId: Int? = null,
-    @SerializedName("cpm") val cpm: String = "0.0",
-    @SerializedName("currency") val currency: String? = null,
-    @SerializedName("width") val width: Int = 0,
-    @SerializedName("height") val height: Int = 0,
-    @SerializedName("displayUrl") val displayUrl: String? = null,
-    @SerializedName("native") val nativeAssets: NativeAssets? = null,
-    @SerializedName("ttl") var ttlInSeconds: Int = 0,
+    @Json(name = "impId") val impressionId: String? = null,
+    @Json(name = "placementId") val placementId: String? = null,
+    @Json(name = "zoneId") val zoneId: Int? = null,
+    @Json(name = "cpm") val cpm: String = "0.0",
+    @Json(name = "currency") val currency: String? = null,
+    @Json(name = "width") val width: Int = 0,
+    @Json(name = "height") val height: Int = 0,
+    @Json(name = "displayUrl") val displayUrl: String? = null,
+    @Json(name = "native") val nativeAssets: NativeAssets? = null,
+    @Json(name = "ttl") var ttlInSeconds: Int = 0,
+    @Json(name = "isVideo") var isVideo: Boolean = false,
+    @Json(name = "isRewarded") var isRewarded: Boolean = false,
 
     /**
      * The time of download in milliseconds for this bid response. This time represent a
@@ -66,11 +70,13 @@ data class CdbResponseSlot(
   fun isValid(): Boolean {
     val hasInvalidCpm = cpmAsNumber ?: -1.0 < 0.0
     val isNoBid = cpmAsNumber == 0.0 && ttlInSeconds == 0
-    if (hasInvalidCpm || isNoBid) {
-      return false
-    }
+    val isSilentBid = cpmAsNumber == 0.0 && ttlInSeconds > 0
 
-    return isNative || URLUtil.isValidUrl(displayUrl)
+    return when {
+      hasInvalidCpm || isNoBid -> false
+      isSilentBid -> true
+      else -> isNative || URLUtil.isValidUrl(displayUrl)
+    }
   }
 
   fun isExpired(clock: Clock): Boolean {

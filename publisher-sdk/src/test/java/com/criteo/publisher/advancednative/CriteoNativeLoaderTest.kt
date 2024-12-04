@@ -21,6 +21,8 @@ import com.criteo.publisher.BidManager
 import com.criteo.publisher.ConsumableBidLoader
 import com.criteo.publisher.CriteoErrorCode
 import com.criteo.publisher.concurrent.DirectMockRunOnUiThreadExecutor
+import com.criteo.publisher.concurrent.RunOnUiThreadExecutor
+import com.criteo.publisher.context.ContextData
 import com.criteo.publisher.integration.Integration
 import com.criteo.publisher.integration.IntegrationRegistry
 import com.criteo.publisher.mock.MockBean
@@ -31,17 +33,6 @@ import com.criteo.publisher.model.Config
 import com.criteo.publisher.model.NativeAdUnit
 import com.criteo.publisher.model.nativeads.NativeAssets
 import com.criteo.publisher.util.BuildConfigWrapper
-import com.nhaarman.mockitokotlin2.any
-import com.nhaarman.mockitokotlin2.argThat
-import com.nhaarman.mockitokotlin2.doAnswer
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.doThrow
-import com.nhaarman.mockitokotlin2.eq
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.stub
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.verifyNoMoreInteractions
-import com.nhaarman.mockitokotlin2.whenever
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Before
@@ -49,8 +40,21 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+import org.mockito.AdditionalAnswers.delegatesTo
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.Mockito
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoMoreInteractions
+import org.mockito.kotlin.whenever
 import javax.inject.Inject
 
 @RunWith(Parameterized::class)
@@ -67,6 +71,10 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
   @Rule
   @JvmField
   val mockedDependenciesRule = MockedDependenciesRule()
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
 
   @SpyBean
   private lateinit var config: Config
@@ -95,25 +103,28 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
   private lateinit var adUnit: NativeAdUnit
 
   @Mock
+  private lateinit var contextData: ContextData
+
+  @Mock
   private lateinit var listener: CriteoNativeAdListener
 
   @Mock
   private lateinit var renderer: CriteoNativeRenderer
 
+  @MockBean
+  private lateinit var injectedRunOnUiThreadExecutor: RunOnUiThreadExecutor
   private lateinit var runOnUiThreadExecutor: DirectMockRunOnUiThreadExecutor
 
   private lateinit var nativeLoader: CriteoNativeLoader
 
   @Before
   fun setUp() {
-    MockitoAnnotations.initMocks(this)
-
     doReturn(liveBiddingEnabled).whenever(config).isLiveBiddingEnabled
 
     runOnUiThreadExecutor = DirectMockRunOnUiThreadExecutor()
-    mockedDependenciesRule.dependencyProvider.stub {
-      on { provideRunOnUiThreadExecutor() } doReturn runOnUiThreadExecutor
-    }
+    Mockito.doAnswer(delegatesTo<Any>(runOnUiThreadExecutor))
+        .whenever(injectedRunOnUiThreadExecutor)
+        .executeAsync(any())
 
     adUnit = NativeAdUnit("myAdUnit")
     nativeLoader = CriteoNativeLoader(adUnit, listener, renderer)
@@ -135,7 +146,7 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
     expectListenerToBeCalledOnUiThread()
     givenNotANativeBidAvailable()
 
-    consumableBidLoader.loadBid(adUnit, nativeLoader::loadAd)
+    consumableBidLoader.loadBid(adUnit, contextData, nativeLoader::loadAd)
 
     verify(listener).onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL)
     verifyNoMoreInteractions(listener)
@@ -161,7 +172,7 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
     expectListenerToBeCalledOnUiThread()
     val nativeAd = givenNativeBidAvailable()
 
-    consumableBidLoader.loadBid(adUnit, nativeLoader::loadAd)
+    consumableBidLoader.loadBid(adUnit, contextData, nativeLoader::loadAd)
 
     verify(listener).onAdReceived(nativeAd)
     verifyNoMoreInteractions(listener)
@@ -170,11 +181,20 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
   }
 
   @Test
+  fun loadAd_GivenNoContext_UseEmptyContext() {
+    nativeLoader = spy(nativeLoader)
+
+    nativeLoader.loadAd()
+
+    verify(nativeLoader).loadAd(eq(ContextData()))
+  }
+
+  @Test
   fun loadAd_GivenNoBid_NotifyListenerOnUiThreadForFailure() {
     expectListenerToBeCalledOnUiThread()
     givenNoBidAvailable()
 
-    nativeLoader.loadAd()
+    nativeLoader.loadAdWithContext()
 
     verify(listener).onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL)
     verifyNoMoreInteractions(listener)
@@ -187,7 +207,7 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
     expectListenerToBeCalledOnUiThread()
     val nativeAd = givenNativeBidAvailable()
 
-    nativeLoader.loadAd()
+    nativeLoader.loadAdWithContext()
 
     verify(listener).onAdReceived(nativeAd)
     verifyNoMoreInteractions(listener)
@@ -200,7 +220,7 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
     expectListenerToBeCalledOnUiThread()
     givenNotANativeBidAvailable()
 
-    nativeLoader.loadAd()
+    nativeLoader.loadAdWithContext()
 
     verify(listener).onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL)
     verifyNoMoreInteractions(listener)
@@ -218,45 +238,45 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
 
     // then
     assertThatCode {
-      nativeLoader.loadAd()
+      nativeLoader.loadAdWithContext()
     }.doesNotThrowAnyException()
   }
 
   private fun givenExceptionWhileFetchingBid() {
-    doThrow(RuntimeException::class).whenever(bidManager).getBidForAdUnit(any(), any())
+    doThrow(RuntimeException::class).whenever(bidManager).getBidForAdUnit(any(), any(), any())
   }
 
   private fun givenNoBidAvailable() {
     doAnswer {
-      it.getArgument<BidListener>(1).onNoBid()
-    }.whenever(bidManager).getBidForAdUnit(eq(adUnit), any())
+      it.getArgument<BidListener>(2).onNoBid()
+    }.whenever(bidManager).getBidForAdUnit(eq(adUnit), eq(contextData), any())
   }
 
   private fun givenNativeBidAvailable(): CriteoNativeAd {
     val nativeAssets = mock<NativeAssets>()
     val nativeAd = mock<CriteoNativeAd>()
-    val slot = mock<CdbResponseSlot>() {
+    val slot = mock<CdbResponseSlot> {
       on { this.nativeAssets } doReturn nativeAssets
     }
 
     doAnswer {
-      it.getArgument<BidListener>(1).onBidResponse(slot)
-    }.whenever(bidManager).getBidForAdUnit(eq(adUnit), any())
+      it.getArgument<BidListener>(2).onBidResponse(slot)
+    }.whenever(bidManager).getBidForAdUnit(eq(adUnit), eq(contextData), any())
 
     nativeAdMapper.stub {
-      on { map(eq(nativeAssets), argThat { listener == get() }, any()) } doReturn nativeAd
+      on { map(eq(nativeAssets), any(), any()) } doReturn nativeAd
     }
     return nativeAd
   }
 
   private fun givenNotANativeBidAvailable() {
-    val slot = mock<CdbResponseSlot>() {
+    val slot = mock<CdbResponseSlot> {
       on { nativeAssets } doReturn null
     }
 
     doAnswer {
-      it.getArgument<BidListener>(1).onBidResponse(slot)
-    }.whenever(bidManager).getBidForAdUnit(eq(adUnit), any())
+      it.getArgument<BidListener>(2).onBidResponse(slot)
+    }.whenever(bidManager).getBidForAdUnit(eq(adUnit), eq(contextData), any())
   }
 
   private fun expectListenerToBeCalledOnUiThread() {
@@ -271,5 +291,9 @@ class CriteoNativeLoaderTest(private val liveBiddingEnabled: Boolean) {
         null
       }
     }
+  }
+
+  private fun CriteoNativeLoader.loadAdWithContext() {
+    loadAd(contextData)
   }
 }

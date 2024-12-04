@@ -16,9 +16,9 @@
 
 package com.criteo.publisher.util
 
-import com.nhaarman.mockitokotlin2.mock
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
+import org.mockito.kotlin.mock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -72,5 +72,4 @@ class MapUtilTest {
 
     assertThat(map["hello"]).isSameAs(concurrent).isSameAs(value)
   }
-
 }

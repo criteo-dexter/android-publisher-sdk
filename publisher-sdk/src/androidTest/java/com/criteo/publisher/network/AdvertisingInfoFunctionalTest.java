@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import com.criteo.publisher.CriteoBannerView;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.mock.MockBean;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
@@ -33,11 +34,9 @@ import com.criteo.publisher.model.BannerAdUnit;
 import com.criteo.publisher.model.CdbRequest;
 import com.criteo.publisher.util.AdvertisingInfo;
 import javax.inject.Inject;
-import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.MockitoAnnotations;
 
 /**
  * This test file is purposefully located within the <code>com.criteo.publisher.network</code>
@@ -60,11 +59,6 @@ public class AdvertisingInfoFunctionalTest {
 
   @Inject
   private Context context;
-
-  @Before
-  public void setUp() throws  Exception {
-    MockitoAnnotations.initMocks(this);
-  }
 
   @Test
   public void testBearcatCall_LimitedGAID() throws Exception {
@@ -105,7 +99,7 @@ public class AdvertisingInfoFunctionalTest {
 
     runOnMainThreadAndWait(() -> {
       CriteoBannerView bannerView = new CriteoBannerView(context, bannerAdUnit);
-      bannerView.loadAd();
+      bannerView.loadAd(new ContextData());
     });
 
     waitForIdleState();
@@ -125,7 +119,7 @@ public class AdvertisingInfoFunctionalTest {
 
     runOnMainThreadAndWait(() -> {
       CriteoBannerView bannerView = new CriteoBannerView(context, bannerAdUnit);
-      bannerView.loadAd();
+      bannerView.loadAd(new ContextData());
     });
 
     waitForIdleState();
@@ -137,7 +131,7 @@ public class AdvertisingInfoFunctionalTest {
   }
 
   private String fetchDeviceIdSentInCdbRequest(CdbRequest cdb) {
-    return cdb.getUser().deviceId();
+    return cdb.getUser().getDeviceId();
   }
 
   private void waitForIdleState() {

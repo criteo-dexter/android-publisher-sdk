@@ -67,6 +67,8 @@ public class CdbResponseSlotTest {
     assertThat(slot.getTtlInSeconds()).isZero();
     assertThat(slot.getDisplayUrl()).isNull();
     assertThat(slot.getNativeAssets()).isNull();
+    assertThat(slot.isVideo()).isFalse();
+    assertThat(slot.isRewarded()).isFalse();
   }
 
   @Test
@@ -208,10 +210,9 @@ public class CdbResponseSlotTest {
         "    }]\n" +
         "}";
 
-    NativeAssets expectedNativeAssets = DependencyProvider.getInstance().provideGson().fromJson(
-        nativeJson,
+    NativeAssets expectedNativeAssets = DependencyProvider.getInstance().provideMoshi().adapter(
         NativeAssets.class
-    );
+    ).fromJson(nativeJson);
 
     JSONObject cdbResponse = new JSONObject(cdbStringResponse);
     JSONObject cdbSlot = cdbResponse.getJSONArray("slots").getJSONObject(0);
@@ -409,6 +410,19 @@ public class CdbResponseSlotTest {
   }
 
   @Test
+  public void isValid_GivenSilentBid_ReturnTrue() throws Exception {
+    String json = "{\n"
+        + "  \"placementId\": \"myAdUnit\",\n"
+        + "  \"cpm\": \"0.00\",\n"
+        + "  \"currency\": \"USD\",\n"
+        + "  \"ttl\": 60,\n"
+        + "}";
+    CdbResponseSlot slot = CdbResponseSlot.fromJson(new JSONObject(json));
+
+    assertThat(slot.isValid()).isTrue();
+  }
+
+  @Test
   public void getTtl_GivenImmediateBid_ShouldNotOverrideTtl() throws Exception {
     // Immediate bid means CPM > 0 and TTL = 0
     // Business logic is managed by the BidManager. This is only expected to decode CDB payload.
@@ -505,6 +519,68 @@ public class CdbResponseSlotTest {
     boolean expired = slot.isExpired(clock);
 
     assertThat(expired).isTrue();
+  }
+
+  @Test
+  public void isVideo_GivenNothingInResponse_ReturnFalse() throws Exception {
+    CdbResponseSlot slot = CdbResponseSlot.fromJson((getJSONSlot()));
+
+    boolean isVideo = slot.isVideo();
+
+    assertThat(isVideo).isFalse();
+  }
+
+  @Test
+  public void isVideo_GivenFalseInResponse_ReturnFalse() throws Exception {
+    JSONObject jsonSlot = getJSONSlot();
+    jsonSlot.put("isVideo", "false");
+    CdbResponseSlot slot = CdbResponseSlot.fromJson(jsonSlot);
+
+    boolean isVideo = slot.isVideo();
+
+    assertThat(isVideo).isFalse();
+  }
+
+  @Test
+  public void isVideo_GivenTrueInResponse_ReturnFalse() throws Exception {
+    JSONObject jsonSlot = getJSONSlot();
+    jsonSlot.put("isVideo", "true");
+    CdbResponseSlot slot = CdbResponseSlot.fromJson((jsonSlot));
+
+    boolean isVideo = slot.isVideo();
+
+    assertThat(isVideo).isTrue();
+  }
+
+  @Test
+  public void isRewarded_GivenNothingInResponse_ReturnFalse() throws Exception {
+    CdbResponseSlot slot = CdbResponseSlot.fromJson((getJSONSlot()));
+
+    boolean isRewarded = slot.isRewarded();
+
+    assertThat(isRewarded).isFalse();
+  }
+
+  @Test
+  public void isRewarded_GivenFalseInResponse_ReturnFalse() throws Exception {
+    JSONObject jsonSlot = getJSONSlot();
+    jsonSlot.put("isRewarded", "false");
+    CdbResponseSlot slot = CdbResponseSlot.fromJson(jsonSlot);
+
+    boolean isRewarded = slot.isRewarded();
+
+    assertThat(isRewarded).isFalse();
+  }
+
+  @Test
+  public void isRewarded_GivenTrueInResponse_ReturnTrue() throws Exception {
+    JSONObject jsonSlot = getJSONSlot();
+    jsonSlot.put("isRewarded", "true");
+    CdbResponseSlot slot = CdbResponseSlot.fromJson((jsonSlot));
+
+    boolean isRewarded = slot.isRewarded();
+
+    assertThat(isRewarded).isTrue();
   }
 
   private JSONObject getNativeJSONSlot() throws Exception{

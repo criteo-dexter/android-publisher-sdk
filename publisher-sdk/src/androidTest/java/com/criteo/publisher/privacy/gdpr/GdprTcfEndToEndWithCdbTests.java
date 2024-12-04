@@ -23,11 +23,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import android.content.Context;
 import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
 import com.criteo.publisher.Criteo;
 import com.criteo.publisher.TestAdUnits;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.ResultCaptor;
 import com.criteo.publisher.mock.SpyBean;
@@ -36,6 +35,7 @@ import com.criteo.publisher.model.CdbResponse;
 import com.criteo.publisher.model.InterstitialAdUnit;
 import com.criteo.publisher.network.PubSdkApi;
 import com.criteo.publisher.util.BuildConfigWrapper;
+import com.criteo.publisher.util.SharedPreferencesFactory;
 import javax.inject.Inject;
 import org.junit.After;
 import org.junit.Before;
@@ -54,20 +54,20 @@ public class GdprTcfEndToEndWithCdbTests {
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
 
-  @Inject
-  private Context context;
-
   @SpyBean
   private PubSdkApi api;
 
   @SpyBean
   private BuildConfigWrapper buildConfigWrapper;
 
+  @Inject
+  private SharedPreferencesFactory sharedPreferencesFactory;
+
   private SharedPreferences sharedPreferences;
 
   @Before
   public void setUp() {
-    sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
+    sharedPreferences = sharedPreferencesFactory.getApplication();
   }
 
   @After
@@ -274,7 +274,7 @@ public class GdprTcfEndToEndWithCdbTests {
   }
 
   private void whenBidding() {
-    Criteo.getInstance().loadBid(validInterstitialAdUnit, ignore -> { /* no op */ });
+    Criteo.getInstance().loadBid(validInterstitialAdUnit, new ContextData(), ignore -> { /* no op */ });
     waitForBids();
   }
 }

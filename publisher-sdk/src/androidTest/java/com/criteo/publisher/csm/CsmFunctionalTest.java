@@ -37,13 +37,16 @@ import androidx.core.util.Consumer;
 import androidx.test.filters.FlakyTest;
 import com.criteo.publisher.Clock;
 import com.criteo.publisher.Criteo;
+import com.criteo.publisher.CriteoInitException;
 import com.criteo.publisher.TestAdUnits;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.csm.MetricRequest.MetricRequestFeedback;
 import com.criteo.publisher.integration.Integration;
 import com.criteo.publisher.integration.IntegrationRegistry;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
 import com.criteo.publisher.model.AdUnit;
+import com.criteo.publisher.network.CdbMock;
 import com.criteo.publisher.network.PubSdkApi;
 import com.criteo.publisher.util.BuildConfigWrapper;
 import java.io.IOException;
@@ -57,13 +60,17 @@ import javax.inject.Inject;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 @FlakyTest(detail = "CSM are triggered concurrently of bid")
 public class CsmFunctionalTest {
 
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Inject
   private IntegrationRegistry integrationRegistry;
@@ -77,10 +84,13 @@ public class CsmFunctionalTest {
   @SpyBean
   private Clock clock;
 
+  @Inject
+  private CdbMock cdbMock;
+
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
     integrationRegistry.declare(Integration.IN_HOUSE);
+    givenConsentGiven();
   }
 
   @Test
@@ -132,6 +142,16 @@ public class CsmFunctionalTest {
 
       return true;
     }));
+  }
+
+  /**
+   * Consent status is updated after the first response from CDB. Therefore, a first bid-request
+   * is made here to get the wanted side-effect.
+   */
+  private void givenConsentGiven() throws CriteoInitException {
+    givenInitializedCriteo(TestAdUnits.BANNER_320_480);
+    waitForIdleState();
+    MetricHelper.cleanState(mockedDependenciesRule.getDependencyProvider());
   }
 
   @Test
@@ -268,7 +288,7 @@ public class CsmFunctionalTest {
     waitForIdleState();
 
     // Timeout
-    mockedDependenciesRule.getCdbMock().simulatorSlowNetworkOnNextRequest();
+    cdbMock.simulatorSlowNetworkOnNextRequest();
     when(buildConfigWrapper.getNetworkTimeoutInMillis()).thenReturn(1);
     loadBid(TestAdUnits.INTERSTITIAL);
     waitForIdleState();
@@ -397,6 +417,6 @@ public class CsmFunctionalTest {
   }
 
   private void loadBid(@NonNull AdUnit adUnit) {
-    Criteo.getInstance().loadBid(adUnit, ignored -> { /* no op */ });
+    Criteo.getInstance().loadBid(adUnit, new ContextData(), ignored -> { /* no op */ });
   }
 }

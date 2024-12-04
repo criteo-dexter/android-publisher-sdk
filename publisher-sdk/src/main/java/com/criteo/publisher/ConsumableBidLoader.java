@@ -17,6 +17,11 @@
 package com.criteo.publisher;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.CdbResponseSlot;
 import org.jetbrains.annotations.NotNull;
@@ -29,34 +34,50 @@ import org.jetbrains.annotations.NotNull;
  */
 public class ConsumableBidLoader {
 
+  private final Logger logger = LoggerFactory.getLogger(getClass());
+
   @NonNull
   private final BidManager bidManager;
 
   @NonNull
   private final Clock clock;
 
+  @NonNull
+  private final RunOnUiThreadExecutor runOnUiThreadExecutor;
+
   public ConsumableBidLoader(
       @NonNull BidManager bidManager,
-      @NonNull Clock clock
+      @NonNull Clock clock,
+      @NonNull RunOnUiThreadExecutor runOnUiThreadExecutor
   ) {
     this.bidManager = bidManager;
     this.clock = clock;
+    this.runOnUiThreadExecutor = runOnUiThreadExecutor;
   }
 
   public void loadBid(
       @NonNull AdUnit adUnit,
+      @NonNull ContextData contextData,
       @NonNull BidResponseListener bidResponseListener
   ) {
-    bidManager.getBidForAdUnit(adUnit, new BidListener() {
+    bidManager.getBidForAdUnit(adUnit, contextData, new BidListener() {
       @Override
       public void onBidResponse(@NotNull CdbResponseSlot cdbResponseSlot) {
         Bid bid = new Bid(adUnit.getAdUnitType(), clock, cdbResponseSlot);
-        bidResponseListener.onResponse(bid);
+        responseBid(bid);
       }
 
       @Override
       public void onNoBid() {
-        bidResponseListener.onResponse(null);
+        responseBid(null);
+      }
+
+      private void responseBid(@Nullable Bid bid) {
+        logger.log(BiddingLogMessage.onConsumableBidLoaded(adUnit, bid));
+
+        // The bid object is used for AppBidding and InHouse.
+        // For InHouse, it is preferable.
+        runOnUiThreadExecutor.executeAsync(() -> bidResponseListener.onResponse(bid));
       }
     });
   }

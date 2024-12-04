@@ -1,4 +1,107 @@
-# Next version
+# Next Version
+
+# Version 7.1.0
+- Bump AdMob to v23.3.0
+
+# Version 7.0.0
+- Add inventoryGroupId parameter
+
+# Version 6.0.0
+- Add support of Android 14 (API level 34)
+- Add support for MRAID 2.0 specification
+
+# Version 5.0.2
+- Send SDK MRAID capability
+- Fix MRAID iframe issues
+- Do not send `deviceId` in config request
+
+# Version 5.0.1
+- Downgrade Moshi to 1.12 and Kotlin to 1.15.31
+
+# Version 5.0.0
+- Bump AdMob to v22.1.0
+- Add support for MRAID v1 specification. Everything is supported except for useCustomClose and two-part creatives.
+
+# Version 4.9.2
+- Fix proguard issue with `RemoteConfigResponse`
+- Add null checks in `TopActivityFinder`
+
+# Version 4.9.1
+- Add support of Android 13 (API level 33)
+
+# Version 4.9.0
+- Add support of Android 13 (API level 33)
+
+# Version 4.8.1
+- Fix error on Criteo init
+
+# Version 4.8.0
+- Add support of Android 12L (API level 32)
+- Bump AdMob to v21.2.0
+- Bump minSdkVersion to 19
+
+# Version 4.7.0
+- Deprecate API related to MoPub and stop supporting MoPub App Bidding
+- Add ability to set Children’s Online Privacy Protection Act (“COPPA”) flag
+- Fix ANR when fetching User Agent from WebView
+
+# Version 4.6.1
+
+- Bump AGP, Gradle and Kotlin version
+- Bump Java Compiler version to 11
+- Continuously test support of Android 11 (API level 30)
+- Add support of Android 12 (API level 31)
+
+# Version 4.6.0
+
+- Features
+  - MoPub AppBidding: Add support for VAST Rewarded video ads
+  - GAM AppBidding: Add support for VAST Rewarded video ads
+
+# Version 4.5.0
+- Features
+  - MoPub AppBidding: Add support for VAST Video ads
+  - GAM AppBidding: Add support for VAST Video ads
+- Bug fixes
+  - If SDK init is called from a worker thread, then GAID is fetched asynchronously in another worker thread to not 
+    block the caller's thread.
+  - Recover from corrupted network sending queue having an element with a huge size that could throw an OOM.
+
+# Version 4.4.0
+- Artifacts are now delivered through `Maven Central` repository instead of `JCenter` which is deprecated.
+- Handle retro compatibility of AdMob < v19.7.0
+
+# Version 4.3.0
+- Breaking changes
+  - Removed support of Google SDK < v19.7.0 (see https://developers.google.com/admob/android/migration)
+- Features
+  - Added support of Google SDK v20.0.0
+  - Added support of Android 11 (API level 30)
+- Bug fixes
+  - Reduce log level of network exception from error to info
+  - Fix infinite `NoSuchMethodException` when Proguard is used with method inlining enabled
+  - Estimate size of in-memory queue and bound its size to avoid potential OOM
+
+# Version 4.2.2
+
+- Bug fixes
+  - Reduce log level of `UnknownHostException` from error to info
+
+# Version 4.2.1
+
+- Bug fixes
+  - Fix crash when initializing the SDK
+
+# Version 4.2.0
+- Features
+  - Add remote logging support.
+
+# Version 4.1.0
+
+- Features
+  - Add a constructor without `NativeAdUnit` in `CriteoNativeLoader` for InHouse integration
+  - Add API to collect different levels of signals which will be used to bid based on context
+  - Add `Criteo.Builder#debugLogsEnabled` to enable useful logs to troubleshoot the SDK
 
 # Version 4.0.0
 
@@ -15,7 +118,24 @@
   https://developer.android.com/studio/write/java8-support.
   - Remove the deprecated `Criteo#init` method. [`Criteo.Builder#init`](https://github.com/criteo/android-publisher-sdk/blob/main/publisher-sdk/src/main/java/com/criteo/publisher/Criteo.java#L54)
   should be used instead.
-- CriteoBannerView is now a custom view that can included directly in a layout file.
+  - Update InHouse API:
+    - Replace `Criteo#getBidResponse(AdUnit)` method by `Criteo#loadBid(AdUnit, BidResponseListener)`
+    - Rename `BidResponse` to `Bid`
+    - Remove `BidResponse#isBidSuccess()` method, bid is a success when `Bid` object is not null
+    - Remove `BidResponse#getBidToken()` method and `BidToken` class, the `loadAd` methods (in `CriteoBannerView`,
+    `CriteoInterstitial`, `CriteoNativeLoader`) take a `Bid` object instead
+  - Update AppBidding API:
+    - Replace `Criteo#setBidsForAdUnit(Object, AdUnit)` method by `Criteo#enrichAdObjectWithBid(Object, Bid)`
+    - Use `Criteo#loadBid(AdUnit, BidResponseListener)` method to provide `Bid` object
+  - Make `CriteoNativeAdListener` an interface instead of an abstract class
+  - Replace `View` parameter by a `CriteoBannerView` in `CriteoBannerAdListener#onAdReceived`
+  - Remove `CriteoBannerAdListener#onAdClosed`
+  - Remove `CriteoBannerAdListener#onAdOpened`
+
+- Features
+  - CriteoBannerView is now a custom view that can be included directly in a layout file.
+  - Add live bidding: Load a fresh bid within a pre-determined time budget and use any valid cached bid as a fallback.
+  - Add `Criteo#getVersion()` method returning the version of the SDK at runtime.
 
 # Version 3.10.1
 - Bug fix

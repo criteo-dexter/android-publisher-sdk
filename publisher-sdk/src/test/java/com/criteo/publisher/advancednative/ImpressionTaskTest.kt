@@ -16,38 +16,38 @@
 
 package com.criteo.publisher.advancednative
 
-import com.nhaarman.mockitokotlin2.*
 import org.assertj.core.api.Assertions.assertThatCode
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
 import org.mockito.Mockito.never
-import org.mockito.MockitoAnnotations
-import java.lang.ref.Reference
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import java.lang.ref.WeakReference
 import java.net.URL
 
 class ImpressionTaskTest {
 
-    @Mock
-    private lateinit var impressionPixels: Iterable<URL>
+    @Rule
+    @JvmField
+    val mockitoRule = MockitoJUnit.rule()
 
     @Mock
-    private lateinit var listenerRef: Reference<CriteoNativeAdListener>
+    private lateinit var impressionPixels: Iterable<URL>
 
     @Mock
     private lateinit var helper: ImpressionHelper
 
     private lateinit var task: ImpressionTask
 
-    @Before
-    fun setUp() {
-        MockitoAnnotations.initMocks(this)
-
-        task = ImpressionTask(impressionPixels, listenerRef, helper)
-    }
-
     @Test
     fun onVisible_GivenPixels_DelegateToHelper() {
+        createImpressionTaskWithListener()
+
         task.onVisible()
 
         verify(helper).firePixels(impressionPixels)
@@ -55,7 +55,7 @@ class ImpressionTaskTest {
 
     @Test
     fun onVisible_GivenEmptyListenerRef_DoesNotThrowAndDoNotDelegateToHelper() {
-        whenever(listenerRef.get()).thenReturn(null)
+        createImpressionTaskWithListener()
 
         assertThatCode {
             task.onVisible()
@@ -67,16 +67,17 @@ class ImpressionTaskTest {
     @Test
     fun onVisible_GivenNotEmptyListenerRef_DelegateToHelper() {
         val listener = mock<CriteoNativeAdListener>()
-        whenever(listenerRef.get()).thenReturn(listener)
+        createImpressionTaskWithListener(listener)
 
         task.onVisible()
 
-        verify(helper).notifyImpression(listener);
+        verify(helper).notifyImpression(listener)
     }
 
     @Test
     fun onVisible_CalledTwice_WorkOnlyOnce() {
-        whenever(listenerRef.get()).thenReturn(mock())
+        val listener = mock<CriteoNativeAdListener>()
+        createImpressionTaskWithListener(listener)
 
         task.onVisible()
         task.onVisible()
@@ -85,4 +86,7 @@ class ImpressionTaskTest {
         verify(helper, times(1)).notifyImpression(any())
     }
 
+    private fun createImpressionTaskWithListener(listener: CriteoNativeAdListener? = null) {
+        task = ImpressionTask(impressionPixels, WeakReference(listener), helper)
+    }
 }

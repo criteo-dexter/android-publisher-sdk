@@ -16,9 +16,11 @@
 
 package com.criteo.publisher.network
 
+import androidx.annotation.VisibleForTesting
 import com.criteo.publisher.Clock
 import com.criteo.publisher.LiveCdbCallListener
 import com.criteo.publisher.annotation.OpenForTesting
+import com.criteo.publisher.context.ContextData
 import com.criteo.publisher.model.CacheAdUnit
 import com.criteo.publisher.model.CdbRequestFactory
 import com.criteo.publisher.model.Config
@@ -38,11 +40,10 @@ class LiveBidRequestSender(
 
   fun sendLiveBidRequest(
       cacheAdUnit: CacheAdUnit,
+      contextData: ContextData,
       liveCdbCallListener: LiveCdbCallListener
   ) {
-    scheduledExecutorService.schedule({
-      liveCdbCallListener.onTimeBudgetExceeded()
-    }, config.liveBiddingTimeBudgetInMillis.toLong(), TimeUnit.MILLISECONDS)
+    scheduleTimeBudgetExceeded(liveCdbCallListener)
 
     executor.execute(
         CdbCall(
@@ -50,8 +51,16 @@ class LiveBidRequestSender(
             cdbRequestFactory,
             clock,
             listOf(cacheAdUnit),
+            contextData,
             liveCdbCallListener
         )
     )
+  }
+
+  @VisibleForTesting
+  internal fun scheduleTimeBudgetExceeded(liveCdbCallListener: LiveCdbCallListener) {
+    scheduledExecutorService.schedule({
+      liveCdbCallListener.onTimeBudgetExceeded()
+    }, config.liveBiddingTimeBudgetInMillis.toLong(), TimeUnit.MILLISECONDS)
   }
 }

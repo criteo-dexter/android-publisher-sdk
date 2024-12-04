@@ -16,41 +16,53 @@
 
 package com.criteo.publisher.model;
 
+import static com.criteo.publisher.model.DeviceInfoLogMessage.onErrorDuringWebViewUserAgentGet;
+
 import android.content.Context;
-import android.text.TextUtils;
-import android.util.Log;
-import android.webkit.WebView;
+import android.webkit.WebSettings;
 import androidx.annotation.NonNull;
-import androidx.annotation.UiThread;
 import androidx.annotation.VisibleForTesting;
-import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
+import androidx.annotation.WorkerThread;
+import com.criteo.publisher.SafeRunnable;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.util.CompletableFuture;
+import com.criteo.publisher.util.PreconditionsUtil;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class DeviceInfo {
 
-  private static final String TAG = DeviceInfo.class.getSimpleName();
+  @NonNull
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
+  @NonNull
   private final Context context;
-  private final RunOnUiThreadExecutor runOnUiThreadExecutor;
+
+  @NonNull
+  private final Executor executor;
+
+  @NonNull
   private final CompletableFuture<String> userAgentFuture = new CompletableFuture<>();
+
+  @NonNull
   private final AtomicBoolean isInitialized = new AtomicBoolean(false);
 
-  public DeviceInfo(Context context, RunOnUiThreadExecutor runOnUiThreadExecutor) {
+  public DeviceInfo(@NonNull Context context, @NonNull Executor executor) {
     this.context = context;
-    this.runOnUiThreadExecutor = runOnUiThreadExecutor;
+    this.executor = executor;
   }
 
   public void initialize() {
-    // This needs to be run on UI thread because a WebView is used to fetch the user-agent
-    runOnUiThread(new Runnable() {
-      @Override
-      public void run() {
-        if (isInitialized.compareAndSet(false, true)) {
-          String userAgent = resolveUserAgent();
-          userAgentFuture.complete(userAgent);
-        }
+    if (isInitialized.get()) {
+      return;
+    }
+
+    runSafely(() -> {
+      if (isInitialized.compareAndSet(false, true)) {
+        String userAgent = resolveUserAgent();
+        userAgentFuture.complete(userAgent);
       }
     });
   }
@@ -63,60 +75,43 @@ public class DeviceInfo {
     return userAgentFuture;
   }
 
-  private void runOnUiThread(Runnable runnable) {
-    Runnable safeRunnable = new Runnable() {
+  private void runSafely(Runnable runnable) {
+    Runnable safeRunnable = new SafeRunnable() {
       @Override
-      public void run() {
-        try {
-          runnable.run();
-        } catch (Throwable tr) {
-          Log.e(TAG, "Internal error while setting user-agent.", tr);
-        }
+      public void runSafely() {
+        runnable.run();
       }
     };
 
-    runOnUiThreadExecutor.executeAsync(safeRunnable);
+    executor.execute(safeRunnable);
   }
 
   @VisibleForTesting
   @NonNull
-  @UiThread
+  @WorkerThread
   String resolveUserAgent() {
-    String userAgent = null;
-
-    // Try to fetch the UA from a web view
-    // This may fail with a RuntimeException that is safe to ignore
     try {
-      userAgent = getWebViewUserAgent();
-    } catch (Throwable ignore) {
-      // FIXME this is not a RuntimeException, this is a throwable that should not be
-      // caught and ignored so easily.
+      return getWebViewUserAgent();
+    } catch (Throwable t) {
+      logger.log(onErrorDuringWebViewUserAgentGet(t));
+      return getDefaultUserAgent();
     }
-
-    // If we failed to get a WebView UA, try to fall back to a system UA, instead
-    if (TextUtils.isEmpty(userAgent)) {
-      userAgent = getDefaultUserAgent();
-    }
-
-    return userAgent;
   }
 
-  @UiThread
+  @WorkerThread
   private String getWebViewUserAgent() {
-    WebView webView = new WebView(context);
-    String userAgent = webView.getSettings().getUserAgentString();
-    webView.destroy();
-    return userAgent;
+    return WebSettings.getDefaultUserAgent(context);
   }
 
   @NonNull
-  private static String getDefaultUserAgent() {
+  private String getDefaultUserAgent() {
     String userAgent = null;
 
     try {
+      // There is no SecurityException on Android, so normally this safe
       userAgent = System.getProperty("http.agent");
     } catch (Throwable tr) {
-      Log.e(TAG, "Unable to retrieve system user-agent.", tr);
+      PreconditionsUtil.throwOrLog(tr);
     }
 
     return userAgent != null ? userAgent : "";

@@ -17,9 +17,9 @@
 package com.criteo.testapp.listener;
 
 import android.util.Log;
-import android.view.View;
 import androidx.annotation.NonNull;
 import com.criteo.publisher.CriteoBannerAdListener;
+import com.criteo.publisher.CriteoBannerView;
 import com.criteo.publisher.CriteoErrorCode;
 
 public class TestAppBannerAdListener implements CriteoBannerAdListener {
@@ -43,22 +43,12 @@ public class TestAppBannerAdListener implements CriteoBannerAdListener {
   }
 
   @Override
-  public void onAdOpened() {
-    Log.d(tag, prefix + " - Banner onAdOpened");
-  }
-
-  @Override
-  public void onAdClosed() {
-    Log.d(tag, prefix + " - Banner onAdClosed");
-  }
-
-  @Override
   public void onAdFailedToReceive(@NonNull CriteoErrorCode code) {
     Log.d(tag, prefix + " - Banner onAdFailedToReceive, reason : " + code.toString());
   }
 
   @Override
-  public void onAdReceived(View view) {
+  public void onAdReceived(@NonNull CriteoBannerView view) {
     Log.d(tag, prefix + " - Banner onAdReceived");
   }
 

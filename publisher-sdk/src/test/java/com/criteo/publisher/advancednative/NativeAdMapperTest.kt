@@ -23,18 +23,28 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import com.criteo.publisher.activity.TopActivityFinder
 import com.criteo.publisher.adview.Redirection
-import com.criteo.publisher.concurrent.RunOnUiThreadExecutor
 import com.criteo.publisher.mock.MockBean
 import com.criteo.publisher.mock.MockedDependenciesRule
-import com.criteo.publisher.mock.SpyBean
 import com.criteo.publisher.model.nativeads.NativeAssets
 import com.criteo.publisher.model.nativeads.NativeProduct
 import com.criteo.publisher.network.PubSdkApi
-import com.nhaarman.mockitokotlin2.*
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Rule
 import org.junit.Test
 import org.mockito.Answers
+import org.mockito.kotlin.any
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.check
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.inOrder
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import java.lang.ref.WeakReference
 import java.net.URI
 import javax.inject.Inject
@@ -44,9 +54,6 @@ class NativeAdMapperTest {
   @Rule
   @JvmField
   val mockedDependenciesRule = MockedDependenciesRule()
-
-  @SpyBean
-  private lateinit var runOnUiThreadExecutor: RunOnUiThreadExecutor
 
   @MockBean
   private lateinit var visibilityTracker: VisibilityTracker
@@ -113,21 +120,19 @@ class NativeAdMapperTest {
   }
 
   @Test
-  fun watchForImpression_GivenVisibilityTriggeredManyTimesOnDifferentViews_NotifyListenerOnceForImpressionAndFirePixels() {
+  fun watchForImpression_GivenVisibilityTriggeredManyTimesOnManyViews_NotifyListenerOnceForImpressionAndFirePixels() {
     val listener = mock<CriteoNativeAdListener>()
 
     val pixel1 = URI.create("http://pixel1.url").toURL()
     val pixel2 = URI.create("http://pixel2.url").toURL()
-    val assets = mock<NativeAssets>(defaultAnswer=Answers.RETURNS_DEEP_STUBS) {
+    val assets = mock<NativeAssets>(defaultAnswer = Answers.RETURNS_DEEP_STUBS) {
       on { impressionPixels } doReturn listOf(pixel1, pixel2)
     }
 
     val view1 = mock<View>()
     val view2 = mock<View>()
 
-    givenDirectUiExecutor()
-
-    //when
+    // when
     val nativeAd = mapper.map(assets, WeakReference(listener), mock())
 
     nativeAd.watchForImpression(view1)
@@ -169,12 +174,10 @@ class NativeAdMapperTest {
 
     val topActivity = mock<ComponentName>()
     topActivityFinder.stub {
-      on { topActivityName } doReturn topActivity
+      on { getTopActivityName() } doReturn topActivity
     }
 
-    givenDirectUiExecutor()
-
-    //when
+    // when
     val nativeAd = mapper.map(assets, WeakReference(listener), mock())
     nativeAd.setProductClickableView(view1)
     nativeAd.setProductClickableView(view2)
@@ -197,7 +200,7 @@ class NativeAdMapperTest {
   fun setPrivacyOptOutClickableView_GivenDifferentViewsClickedManyTimes_NotifyListenerForClicksAndRedirectUser() {
     val listener = mock<CriteoNativeAdListener>()
 
-    val assets = mock<NativeAssets>(defaultAnswer=Answers.RETURNS_DEEP_STUBS) {
+    val assets = mock<NativeAssets>(defaultAnswer = Answers.RETURNS_DEEP_STUBS) {
       on { privacyOptOutClickUrl } doReturn URI.create("privacy://criteo")
     }
 
@@ -206,12 +209,10 @@ class NativeAdMapperTest {
 
     val topActivity = mock<ComponentName>()
     topActivityFinder.stub {
-      on { topActivityName } doReturn topActivity
+      on { getTopActivityName() } doReturn topActivity
     }
 
-    givenDirectUiExecutor()
-
-    //when
+    // when
     val nativeAd = mapper.map(assets, WeakReference(listener), mock())
     nativeAd.setAdChoiceClickableView(view1)
     nativeAd.setAdChoiceClickableView(view2)
@@ -249,7 +250,7 @@ class NativeAdMapperTest {
   fun createRenderedNativeView_GivenRenderer_InflateThenRenderAndSetupInternals() {
     val listener = mock<CriteoNativeAdListener>()
     val renderer = mock<CriteoNativeRenderer>()
-    val assets = mock<NativeAssets>(defaultAnswer=Answers.RETURNS_DEEP_STUBS)
+    val assets = mock<NativeAssets>(defaultAnswer = Answers.RETURNS_DEEP_STUBS)
     val context = mock<Context>()
     val parent = mock<ViewGroup>()
     val nativeView = mock<ViewGroup>()
@@ -270,14 +271,4 @@ class NativeAdMapperTest {
       verify(nativeAd).setAdChoiceClickableView(adChoiceView)
     }
   }
-
-  private fun givenDirectUiExecutor() {
-    runOnUiThreadExecutor.stub {
-      on { executeAsync(any()) } doAnswer {
-        val command: Runnable = it.getArgument(0)
-        command.run()
-      }
-    }
-  }
-
 }

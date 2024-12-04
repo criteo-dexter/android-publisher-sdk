@@ -35,6 +35,8 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import android.app.Activity;
+import android.content.Context;
 import android.os.Bundle;
 import android.view.View;
 import androidx.annotation.NonNull;
@@ -44,6 +46,8 @@ import com.criteo.publisher.Criteo;
 import com.criteo.publisher.CriteoInitException;
 import com.criteo.publisher.CriteoUtil;
 import com.criteo.publisher.TestAdUnits;
+import com.criteo.publisher.context.ContextData;
+import com.criteo.publisher.integration.DfpHeaderBiddingFunctionalTest.DfpSync.SyncInterstitialAdListener;
 import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.ResultCaptor;
@@ -62,10 +66,14 @@ import com.criteo.publisher.util.BuildConfigWrapper;
 import com.criteo.publisher.view.WebViewLookup;
 import com.google.android.gms.ads.AdListener;
 import com.google.android.gms.ads.AdRequest;
-import com.google.android.gms.ads.doubleclick.PublisherAdRequest;
-import com.google.android.gms.ads.doubleclick.PublisherAdRequest.Builder;
-import com.google.android.gms.ads.doubleclick.PublisherAdView;
-import com.google.android.gms.ads.doubleclick.PublisherInterstitialAd;
+import com.google.android.gms.ads.LoadAdError;
+import com.google.android.gms.ads.MobileAds;
+import com.google.android.gms.ads.RequestConfiguration;
+import com.google.android.gms.ads.admanager.AdManagerAdRequest;
+import com.google.android.gms.ads.admanager.AdManagerAdRequest.Builder;
+import com.google.android.gms.ads.admanager.AdManagerAdView;
+import com.google.android.gms.ads.admanager.AdManagerInterstitialAd;
+import com.google.android.gms.ads.admanager.AdManagerInterstitialAdLoadCallback;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -74,9 +82,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import javax.inject.Inject;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -92,6 +102,7 @@ public class DfpHeaderBiddingFunctionalTest {
   private static final String MACRO_CPM = "crt_cpm";
   private static final String MACRO_DISPLAY_URL = "crt_displayurl";
   private static final String MACRO_SIZE = "crt_size";
+  private static final String MACRO_FORMAT = "crt_format";
   private static final String MACRO_NATIVE_TITLE = "crtn_title";
   private static final String MACRO_NATIVE_DESCRIPTION = "crtn_desc";
   private static final String MACRO_NATIVE_IMAGE = "crtn_imageurl";
@@ -115,7 +126,7 @@ public class DfpHeaderBiddingFunctionalTest {
 
   /**
    * Time (in milliseconds) to wait for the interstitial activity of DFP to open itself after
-   * calling {@link PublisherInterstitialAd#show()}.
+   * calling {@link AdManagerInterstitialAd#show(Activity)} )}.
    */
   private static final long DFP_INTERSTITIAL_OPENING_TIMEOUT_MS = 1000;
 
@@ -160,35 +171,55 @@ public class DfpHeaderBiddingFunctionalTest {
   @SpyBean
   private Config config;
 
+  @Inject
+  private Context context;
+
   @Before
   public void setUp() {
     doReturn(isLiveBiddingEnabled).when(config).isLiveBiddingEnabled();
+
+    RequestConfiguration requestConfiguration = new RequestConfiguration.Builder().setTestDeviceIds(Collections.singletonList(AdRequest.DEVICE_ID_EMULATOR)).build();
+    MobileAds.setRequestConfiguration(requestConfiguration);
   }
 
   @Test
   public void whenGettingBid_GivenValidCpIdAndPrefetchValidBannerId_CriteoMacroAreInjectedInDfpBuilder()
       throws Exception {
-    whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(validBannerAdUnit);
+    whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(validBannerAdUnit, false);
   }
 
   @Test
   public void whenGettingBid_GivenValidCpIdAndPrefetchValidInterstitialId_CriteoMacroAreInjectedInDfpBuilder()
       throws Exception {
-    whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(validInterstitialAdUnit);
+    whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(validInterstitialAdUnit, false);
   }
 
-  private void whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(AdUnit adUnit) throws Exception {
+  @Test
+  public void whenGettingBid_GivenValidCpIdAndPrefetchValidInterstitialVideoId_CriteoMacroAreInjectedInDfpBuilder()
+      throws Exception {
+    whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(TestAdUnits.INTERSTITIAL_VIDEO, true);
+  }
+
+  @Test
+  public void whenGettingBid_GivenValidCpIdAndPrefetchValidRewardedVideoId_CriteoMacroAreInjectedInDfpBuilder()
+      throws Exception {
+    givenInitializedCriteo();
+
+    // this request is ignored because current detected integration (fallback) is not supporting rewarded video
+    loadBidAndWait(TestAdUnits.REWARDED, new Builder());
+    // now, as a GAM builder was given, then the detected integration is GAM AppBidding and next request will work.
+
+    whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(TestAdUnits.REWARDED, true);
+  }
+
+  private void whenGettingBid_GivenValidCpIdAndValidAdUnit_CriteoMacroAreInjectedInDfpBuilder(AdUnit adUnit, boolean isVideo) throws Exception {
     givenInitializedCriteo(adUnit);
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        adUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(adUnit, builder);
 
-    assertCriteoMacroAreInjectedInDfpBuilder(builder);
+    assertCriteoMacroAreInjectedInDfpBuilder(builder, isVideo);
     assertBidRequestHasGoodProfileId();
   }
 
@@ -199,11 +230,7 @@ public class DfpHeaderBiddingFunctionalTest {
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        validNativeAdUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(validNativeAdUnit, builder);
 
     Bundle customTargeting = builder.build().getCustomTargeting();
 
@@ -259,11 +286,7 @@ public class DfpHeaderBiddingFunctionalTest {
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        adUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(adUnit, builder);
 
     Bundle customTargeting = builder.build().getCustomTargeting();
 
@@ -311,13 +334,9 @@ public class DfpHeaderBiddingFunctionalTest {
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        adUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(adUnit, builder);
 
-    assertCriteoMacroAreInjectedInDfpBuilder(builder);
+    assertCriteoMacroAreInjectedInDfpBuilder(builder, false);
 
     // The amount is not that important, but the format is
     String cpm = builder.build().getCustomTargeting().getString(MACRO_CPM);
@@ -345,11 +364,7 @@ public class DfpHeaderBiddingFunctionalTest {
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        adUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(adUnit, builder);
 
     String encodedDisplayUrl = builder.build().getCustomTargeting().getString(MACRO_DISPLAY_URL);
     String decodedDisplayUrl = decodeDfpPayloadComponent(encodedDisplayUrl);
@@ -367,11 +382,7 @@ public class DfpHeaderBiddingFunctionalTest {
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        validNativeAdUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(validNativeAdUnit, builder);
 
     Bundle bundle = builder.build().getCustomTargeting();
 
@@ -551,27 +562,22 @@ public class DfpHeaderBiddingFunctionalTest {
     return loadDfpHtmlBannerOrNative(adUnit, createDfpNativeView());
   }
 
-  private String loadDfpHtmlBannerOrNative(AdUnit adUnit, PublisherAdView publisherAdView)
+  private String loadDfpHtmlBannerOrNative(AdUnit adUnit, AdManagerAdView adManagerAdView)
       throws Exception {
     givenInitializedCriteo(adUnit);
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        adUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(adUnit, builder);
 
-    builder.addTestDevice(AdRequest.DEVICE_ID_EMULATOR);
-    PublisherAdRequest request = builder.build();
+    AdManagerAdRequest request = builder.build();
 
-    DfpSync dfpSync = new DfpSync(publisherAdView);
+    DfpSync dfpSync = new DfpSync(adManagerAdView);
 
-    runOnMainThreadAndWait(() -> publisherAdView.loadAd(request));
+    runOnMainThreadAndWait(() -> adManagerAdView.loadAd(request));
     dfpSync.waitForBid();
 
-    return webViewLookup.lookForHtmlContent(publisherAdView).get();
+    return webViewLookup.lookForHtmlContent(adManagerAdView).get();
   }
 
   private String loadDfpHtmlInterstitial(InterstitialAdUnit adUnit) throws Exception {
@@ -579,72 +585,78 @@ public class DfpHeaderBiddingFunctionalTest {
 
     Builder builder = new Builder();
 
-    Criteo.getInstance().loadBid(
-        adUnit,
-        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
-    );
-    waitForBids();
+    loadBidAndWait(adUnit, builder);
 
-    builder.addTestDevice(AdRequest.DEVICE_ID_EMULATOR);
-    PublisherAdRequest request = builder.build();
+    AdManagerAdRequest request = builder.build();
 
-    PublisherInterstitialAd publisherInterstitialAd = createDfpInterstitialView();
-    DfpSync dfpSync = new DfpSync(publisherInterstitialAd);
+    DfpSync dfpSync = new DfpSync();
+    SyncInterstitialAdListener syncInterstitialAdListener = dfpSync.getSyncInterstitialAdListener();
 
-    runOnMainThreadAndWait(() -> publisherInterstitialAd.loadAd(request));
+    runOnMainThreadAndWait(() -> {
+      AdManagerInterstitialAd.load(
+          context,
+          DFP_INTERSTITIAL_ID,
+          request,
+          syncInterstitialAdListener
+      );
+    });
     dfpSync.waitForBid();
 
     View interstitialView = getRootView(webViewLookup.lookForResumedActivity(() -> {
-      runOnMainThreadAndWait(publisherInterstitialAd::show);
+      runOnMainThreadAndWait(() -> {
+        AdManagerInterstitialAd adManagerInterstitialAd = syncInterstitialAdListener.lastInterstitialAd;
+        adManagerInterstitialAd.show(activityRule.getActivity());
+      });
     }).get(DFP_INTERSTITIAL_OPENING_TIMEOUT_MS, TimeUnit.MILLISECONDS));
 
     return webViewLookup.lookForHtmlContent(interstitialView).get();
   }
 
-  private PublisherAdView createDfpBannerView() {
-    PublisherAdView publisherAdView = new PublisherAdView(
-        activityRule.getActivity().getApplicationContext());
-    publisherAdView.setAdSizes(com.google.android.gms.ads.AdSize.BANNER);
-    publisherAdView.setAdUnitId(DFP_BANNER_ID);
-    return publisherAdView;
+  private AdManagerAdView createDfpBannerView() {
+    AdManagerAdView adManagerAdView = new AdManagerAdView(context);
+    adManagerAdView.setAdSizes(com.google.android.gms.ads.AdSize.BANNER);
+    adManagerAdView.setAdUnitId(DFP_BANNER_ID);
+    return adManagerAdView;
   }
 
-  private PublisherInterstitialAd createDfpInterstitialView() {
-    PublisherInterstitialAd publisherInterstitialAd = new PublisherInterstitialAd(
-        activityRule.getActivity().getApplicationContext());
-    publisherInterstitialAd.setAdUnitId(DFP_INTERSTITIAL_ID);
-    return publisherInterstitialAd;
+  private AdManagerAdView createDfpNativeView() {
+    AdManagerAdView adManagerAdView = new AdManagerAdView(context);
+    adManagerAdView.setAdSizes(com.google.android.gms.ads.AdSize.FLUID);
+    adManagerAdView.setAdUnitId(DFP_NATIVE_ID);
+    return adManagerAdView;
   }
 
-  private PublisherAdView createDfpNativeView() {
-    PublisherAdView publisherAdView = new PublisherAdView(
-        activityRule.getActivity().getApplicationContext());
-    publisherAdView.setAdSizes(com.google.android.gms.ads.AdSize.FLUID);
-    publisherAdView.setAdUnitId(DFP_NATIVE_ID);
-    return publisherAdView;
-  }
-
-  private void assertCriteoMacroAreInjectedInDfpBuilder(Builder builder) {
+  private void assertCriteoMacroAreInjectedInDfpBuilder(Builder builder, boolean isVideo) {
     Bundle customTargeting = builder.build().getCustomTargeting();
 
     assertNotNull(customTargeting.getString(MACRO_CPM));
     assertNotNull(customTargeting.getString(MACRO_DISPLAY_URL));
     assertNotNull(customTargeting.getString(MACRO_SIZE));
-    assertEquals(3, customTargeting.size());
+    if (isVideo) {
+      assertNotNull(customTargeting.getString(MACRO_FORMAT));
+      assertEquals(4, customTargeting.size());
+    } else {
+      assertEquals(3, customTargeting.size());
+    }
   }
 
   private void assertBidRequestHasGoodProfileId() throws Exception {
-    if (config.isLiveBiddingEnabled()) {
-      // With live bidding, AppBidding declaration is delayed when bid is consumed. So the declaration is only visible
-      // from the next bid.
-      Criteo.getInstance().loadBid(invalidBannerAdUnit, ignored -> { /* no op */ });
-      waitForBids();
-    }
+    // AppBidding declaration is delayed when bid is consumed. So the declaration is only visible from the next bid.
+    loadBidAndWait(invalidBannerAdUnit, new AdManagerAdRequest.Builder());
 
     verify(api, atLeastOnce()).loadCdb(
         argThat(request -> request.getProfileId() == Integration.GAM_APP_BIDDING.getProfileId()),
         any()
     );
+  }
+
+  private void loadBidAndWait(AdUnit adUnit, Builder builder) {
+    Criteo.getInstance().loadBid(
+        adUnit,
+        new ContextData(),
+        bid -> Criteo.getInstance().enrichAdObjectWithBid(builder, bid)
+    );
+    waitForBids();
   }
 
   private void waitForBids() {
@@ -671,16 +683,19 @@ public class DfpHeaderBiddingFunctionalTest {
     when(config.isLiveBiddingEnabled()).thenReturn(true);
   }
 
-  private static final class DfpSync {
+  static final class DfpSync {
 
     private final CountDownLatch isLoaded = new CountDownLatch(1);
 
-    private DfpSync(PublisherAdView adView) {
+    private DfpSync(AdManagerAdView adView) {
       adView.setAdListener(new SyncAdListener());
     }
 
-    private DfpSync(PublisherInterstitialAd interstitialAd) {
-      interstitialAd.setAdListener(new SyncAdListener());
+    private DfpSync() {
+    }
+
+    SyncInterstitialAdListener getSyncInterstitialAdListener() {
+      return new SyncInterstitialAdListener();
     }
 
     void waitForBid() throws InterruptedException {
@@ -695,11 +710,28 @@ public class DfpHeaderBiddingFunctionalTest {
       }
 
       @Override
-      public void onAdFailedToLoad(int i) {
+      public void onAdFailedToLoad(LoadAdError loadAdError) {
+        LoggerFactory.getLogger(DfpHeaderBiddingFunctionalTest.class)
+            .debug("onAdFailedToLoad for reason %d.", loadAdError);
+        isLoaded.countDown();
+      }
+    }
+
+    class SyncInterstitialAdListener extends AdManagerInterstitialAdLoadCallback {
+      private AdManagerInterstitialAd lastInterstitialAd;
+
+      @Override
+      public void onAdLoaded(@NonNull AdManagerInterstitialAd adManagerInterstitialAd) {
+        lastInterstitialAd = adManagerInterstitialAd;
+        isLoaded.countDown();
+      }
+
+      @Override
+      public void onAdFailedToLoad(@NonNull LoadAdError loadAdError) {
         LoggerFactory.getLogger(DfpHeaderBiddingFunctionalTest.class)
             .debug("onAdFailedToLoad for reason %d. "
-                    + "See: https://developers.google.com/android/reference/com/google/android/gms/ads/doubleclick/PublisherAdRequest",
-                i);
+                    + "See: https://developers.google.com/android/reference/com/google/android/gms/ads/admanager/AdManagerAdRequest",
+                loadAdError);
         isLoaded.countDown();
       }
     }

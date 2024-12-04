@@ -16,26 +16,29 @@
 
 package com.criteo.publisher;
 
+import static com.criteo.publisher.ErrorLogMessage.onUncaughtErrorAtPublicApi;
+
 import android.app.Application;
-import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import com.criteo.publisher.AppEvents.AppEvents;
 import com.criteo.publisher.bid.BidLifecycleListener;
+import com.criteo.publisher.context.ContextData;
+import com.criteo.publisher.context.UserData;
 import com.criteo.publisher.headerbidding.HeaderBidding;
 import com.criteo.publisher.interstitial.InterstitialActivityHelper;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.Config;
 import com.criteo.publisher.model.DeviceInfo;
 import com.criteo.publisher.privacy.UserPrivacyUtil;
-import com.criteo.publisher.util.AppLifecycleUtil;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 
-final class CriteoInternal extends Criteo {
+class CriteoInternal extends Criteo {
 
-  private static final String TAG = CriteoInternal.class.getSimpleName();
+  @NonNull
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   @NonNull
   private final DependencyProvider dependencyProvider;
@@ -63,20 +66,19 @@ final class CriteoInternal extends Criteo {
 
   CriteoInternal(
       Application application,
-      List<AdUnit> adUnits,
+      @NonNull List<AdUnit> adUnits,
       @Nullable Boolean usPrivacyOptout,
-      @Nullable String mopubConsent,
+      @Nullable Boolean tagForChildDirectedTreatment,
       @NonNull DependencyProvider dependencyProvider
   ) {
-
-    if (adUnits == null) {
-      adUnits = new ArrayList<>();
-    }
-
     this.dependencyProvider = dependencyProvider;
+
+    dependencyProvider.provideSession();
 
     deviceInfo = dependencyProvider.provideDeviceInfo();
     deviceInfo.initialize();
+
+    dependencyProvider.provideAdvertisingInfo().prefetchAsync();
 
     config = dependencyProvider.provideConfig();
 
@@ -90,16 +92,9 @@ final class CriteoInternal extends Criteo {
     if (usPrivacyOptout != null) {
       userPrivacyUtil.storeUsPrivacyOptout(usPrivacyOptout);
     }
+    userPrivacyUtil.storeTagForChildDirectedTreatment(tagForChildDirectedTreatment);
 
-    // this null check ensures that instantiating Criteo object with null mopub consent value,
-    // doesn't erase the previously stored consent value
-    if (mopubConsent != null) {
-      userPrivacyUtil.storeMopubConsent(mopubConsent);
-    }
-
-    AppEvents appEvents = dependencyProvider.provideAppEvents();
-    AppLifecycleUtil lifecycleCallback = new AppLifecycleUtil(appEvents, bidManager);
-    application.registerActivityLifecycleCallbacks(lifecycleCallback);
+    application.registerActivityLifecycleCallbacks(dependencyProvider.provideAppLifecycleUtil());
 
     dependencyProvider.provideTopActivityFinder().registerActivityLifecycleFor(application);
 
@@ -123,7 +118,7 @@ final class CriteoInternal extends Criteo {
     try {
       doSetBidsForAdUnit(object, bid);
     } catch (Throwable e) {
-      Log.e(TAG, "Internal error while setting bids for adUnit.", e);
+      logger.log(onUncaughtErrorAtPublicApi(e));
     }
   }
 
@@ -135,19 +130,20 @@ final class CriteoInternal extends Criteo {
    * Method to start new CdbDownload Asynctask [Standalone only]
    */
   @Override
-  void getBidForAdUnit(@Nullable AdUnit adUnit, @NonNull BidListener bidListener) {
-    bidManager.getBidForAdUnit(adUnit, bidListener);
+  void getBidForAdUnit(@Nullable AdUnit adUnit, @NonNull ContextData contextData, @NonNull BidListener bidListener) {
+    bidManager.getBidForAdUnit(adUnit, contextData, bidListener);
   }
 
   @Override
   public void loadBid(
       @NonNull AdUnit adUnit,
+      @NonNull ContextData contextData,
       @NonNull BidResponseListener bidResponseListener
   ) {
     try {
-      consumableBidLoader.loadBid(adUnit, bidResponseListener);
+      consumableBidLoader.loadBid(adUnit, contextData, bidResponseListener);
     } catch (Throwable e) {
-      Log.e(TAG, "Internal error while loading bid response.", e);
+      logger.log(onUncaughtErrorAtPublicApi(e));
       bidResponseListener.onResponse(null);
     }
   }
@@ -172,7 +168,7 @@ final class CriteoInternal extends Criteo {
 
   @NonNull
   @Override
-  public CriteoBannerEventController createBannerController(@NonNull CriteoBannerView bannerView) {
+  public CriteoBannerEventController createBannerController(@NonNull CriteoBannerAdWebView bannerView) {
     return new CriteoBannerEventController(
         bannerView,
         this,
@@ -187,7 +183,17 @@ final class CriteoInternal extends Criteo {
   }
 
   @Override
-  public void setMopubConsent(@Nullable String mopubConsent) {
-    userPrivacyUtil.storeMopubConsent(mopubConsent);
+  public void setUserData(@NonNull UserData userData) {
+    dependencyProvider.provideUserDataHolder().set(userData);
+  }
+
+  @Override
+  public void setTagForChildDirectedTreatment(@Nullable Boolean tagForChildDirectedTreatment) {
+    try {
+      dependencyProvider.provideUserPrivacyUtil().storeTagForChildDirectedTreatment(
+          tagForChildDirectedTreatment);
+    } catch (Throwable t) {
+      logger.log(onUncaughtErrorAtPublicApi(t));
+    }
   }
 }

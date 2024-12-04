@@ -18,12 +18,14 @@ package com.criteo.publisher;
 
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -31,23 +33,29 @@ import android.app.Application;
 import com.criteo.publisher.activity.TopActivityFinder;
 import com.criteo.publisher.bid.BidLifecycleListener;
 import com.criteo.publisher.concurrent.DirectMockRunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.headerbidding.HeaderBidding;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.Config;
 import com.criteo.publisher.model.DeviceInfo;
 import com.criteo.publisher.privacy.UserPrivacyUtil;
+import com.criteo.publisher.util.AdvertisingInfo;
 import com.criteo.publisher.util.AppLifecycleUtil;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class CriteoInternalUnitTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock(answer = Answers.RETURNS_DEEP_STUBS)
   private Application application;
@@ -56,7 +64,7 @@ public class CriteoInternalUnitTest {
 
   private Boolean usPrivacyOptout = false;
 
-  private String mopubConsentValue;
+  private Boolean tagForChildDirectedTreatment = false;
 
   @Mock(answer = Answers.RETURNS_DEEP_STUBS)
   private DependencyProvider dependencyProvider;
@@ -69,8 +77,6 @@ public class CriteoInternalUnitTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     when(dependencyProvider.provideRunOnUiThreadExecutor())
         .thenReturn(new DirectMockRunOnUiThreadExecutor());
 
@@ -101,17 +107,6 @@ public class CriteoInternalUnitTest {
     createCriteo();
 
     verify(bidManager).prefetch(adUnits);
-  }
-
-  @Test
-  public void whenCreatingNewCriteo_GivenBidManagerAndNullAdUnits_ShouldCallPrefetchWithEmptyAdUnits()
-      throws Exception {
-    BidManager bidManager = givenMockedBidManager();
-    adUnits = null;
-
-    createCriteo();
-
-    verify(bidManager).prefetch(Collections.emptyList());
   }
 
   @Test
@@ -195,6 +190,82 @@ public class CriteoInternalUnitTest {
   }
 
   @Test
+  public void whenCreatingNewCriteo_GivenTrueTagForChildDirectedTreatment_ShouldStoreTrueValue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = true;
+
+    createCriteo();
+
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(true);
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenTrueTagForChildDirectedTreatment_ThenSetToFalse_ShouldStoreTrueThenFalseValue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = true;
+
+    CriteoInternal criteoInternal = createCriteo();
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(true);
+
+    criteoInternal.setTagForChildDirectedTreatment(false);
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(false);
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenFalseTagForChildDirectedTreatment_ShouldStoreFalseValue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = false;
+
+    createCriteo();
+
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(false);
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenFalseTagForChildDirectedTreatment_ThenSetToTrue_ShouldFalseThenTrue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = false;
+
+    CriteoInternal criteoInternal = createCriteo();
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(false);
+
+    criteoInternal.setTagForChildDirectedTreatment(true);
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(true);
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenNullTagForChildDirectedTreatment_ShouldStoreNullValue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = null;
+
+    createCriteo();
+
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(null);
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenNullTagForChildDirectedTreatment_ThenSetToTrue_ShouldStoreTrueValue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = null;
+
+    CriteoInternal criteoInternal = createCriteo();
+    criteoInternal.setTagForChildDirectedTreatment(true);
+
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(true);
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenNullTagForChildDirectedTreatment_ThenSetToFalse_ShouldStoreFalseValue() {
+    givenMockedUserPrivacyUtil();
+    tagForChildDirectedTreatment = null;
+
+    CriteoInternal criteoInternal = createCriteo();
+    criteoInternal.setTagForChildDirectedTreatment(false);
+
+    verify(userPrivacyUtil).storeTagForChildDirectedTreatment(false);
+  }
+
+  @Test
   public void whenCreatingNewCriteo_GivenDeviceInfo_InitializeIt() throws Exception {
     DeviceInfo deviceInfo = mock(DeviceInfo.class);
     doReturn(deviceInfo).when(dependencyProvider).provideDeviceInfo();
@@ -202,6 +273,16 @@ public class CriteoInternalUnitTest {
     createCriteo();
 
     verify(deviceInfo).initialize();
+  }
+
+  @Test
+  public void whenCreatingNewCriteo_GivenAdvertisingInfo_PrefetchIt() throws Exception {
+    AdvertisingInfo advertisingInfo = mock(AdvertisingInfo.class);
+    doReturn(advertisingInfo).when(dependencyProvider).provideAdvertisingInfo();
+
+    createCriteo();
+
+    verify(advertisingInfo).prefetchAsync();
   }
 
   @Test
@@ -222,18 +303,30 @@ public class CriteoInternalUnitTest {
   }
 
   @Test
-  public void loadBid_GivenInHouseThrowing_DoNotThrowAndReturnNoBidResponse()
-      throws Exception {
+  public void loadBid_GivenNoContext_UseEmptyContext() throws Exception {
     AdUnit adUnit = mock(AdUnit.class);
     BidResponseListener listener = mock(BidResponseListener.class);
 
-    ConsumableBidLoader consumableBidLoader = givenMockedInHouse();
+    Criteo criteo = spy(createCriteo());
+    criteo.loadBid(adUnit, listener);
+
+    verify(criteo).loadBid(eq(adUnit), eq(new ContextData()), eq(listener));
+  }
+
+  @Test
+  public void loadBid_GivenBidLoaderThrowing_DoNotThrowAndReturnNoBidResponse()
+      throws Exception {
+    AdUnit adUnit = mock(AdUnit.class);
+    BidResponseListener listener = mock(BidResponseListener.class);
+    ContextData contextData = mock(ContextData.class);
+
+    ConsumableBidLoader consumableBidLoader = givenMockedConsumableBidLoader();
     doAnswer(invocation -> {
       throw new RuntimeException();
-    }).when(consumableBidLoader).loadBid(adUnit, listener);
+    }).when(consumableBidLoader).loadBid(adUnit, contextData, listener);
 
     Criteo criteo = createCriteo();
-    criteo.loadBid(adUnit, listener);
+    criteo.loadBid(adUnit, contextData, listener);
 
     verify(listener).onResponse(null);
   }
@@ -242,40 +335,19 @@ public class CriteoInternalUnitTest {
   public void getBidResponse_GivenBidManagerYieldingOne_ReturnIt() throws Exception {
     AdUnit adUnit = mock(AdUnit.class);
     BidResponseListener listener = mock(BidResponseListener.class);
+    ContextData contextData = mock(ContextData.class);
     Bid expectedBid = mock(Bid.class);
 
-    ConsumableBidLoader consumableBidLoader = givenMockedInHouse();
+    ConsumableBidLoader consumableBidLoader = givenMockedConsumableBidLoader();
     doAnswer(invocation -> {
-      invocation.<BidResponseListener>getArgument(1).onResponse(expectedBid);
+      invocation.<BidResponseListener>getArgument(2).onResponse(expectedBid);
       return null;
-    }).when(consumableBidLoader).loadBid(adUnit, listener);
+    }).when(consumableBidLoader).loadBid(adUnit, contextData, listener);
 
     Criteo criteo = createCriteo();
-    criteo.loadBid(adUnit, listener);
+    criteo.loadBid(adUnit, contextData, listener);
 
     verify(listener).onResponse(expectedBid);
-  }
-
-  @Test
-  public void whenCreatingNewCriteo_GivenNonNullMopubConsent_ShouldCallStoreMethod()
-      throws Exception {
-    when(dependencyProvider.provideUserPrivacyUtil()).thenReturn(userPrivacyUtil);
-    mopubConsentValue = "fake_mopub_consent_value";
-
-    createCriteo();
-
-    verify(userPrivacyUtil).storeMopubConsent("fake_mopub_consent_value");
-  }
-
-  @Test
-  public void whenCreatingNewCriteo_GivenNullMopubConsent_ShouldNotCallStoreMethod()
-      throws Exception {
-    when(dependencyProvider.provideUserPrivacyUtil()).thenReturn(userPrivacyUtil);
-    mopubConsentValue = null;
-
-    createCriteo();
-
-    verify(userPrivacyUtil, never()).storeMopubConsent("fake_mopub_consent_value");
   }
 
   @Test
@@ -306,14 +378,15 @@ public class CriteoInternalUnitTest {
   @Test
   public void getBidForAdUnit_GivenBidManager_DelegateToIt() throws Exception {
     AdUnit adUnit = mock(AdUnit.class);
+    ContextData contextData = mock(ContextData.class);
     BidListener bidListener = mock(BidListener.class);
 
     BidManager bidManager = givenMockedBidManager();
 
     CriteoInternal criteo = createCriteo();
-    criteo.getBidForAdUnit(adUnit, bidListener);
+    criteo.getBidForAdUnit(adUnit, contextData, bidListener);
 
-    verify(bidManager).getBidForAdUnit(adUnit, bidListener);
+    verify(bidManager).getBidForAdUnit(adUnit, contextData, bidListener);
   }
 
   private void givenMockedUserPrivacyUtil() {
@@ -344,7 +417,7 @@ public class CriteoInternalUnitTest {
     return headerBidding;
   }
 
-  private ConsumableBidLoader givenMockedInHouse() {
+  private ConsumableBidLoader givenMockedConsumableBidLoader() {
     ConsumableBidLoader consumableBidLoader = mock(ConsumableBidLoader.class);
 
     when(dependencyProvider.provideConsumableBidLoader()).thenReturn(consumableBidLoader);
@@ -353,8 +426,6 @@ public class CriteoInternalUnitTest {
   }
 
   private CriteoInternal createCriteo() {
-    return new CriteoInternal(application, adUnits, usPrivacyOptout,
-        mopubConsentValue, dependencyProvider
-    );
+    return new CriteoInternal(application, adUnits, usPrivacyOptout, tagForChildDirectedTreatment, dependencyProvider);
   }
 }

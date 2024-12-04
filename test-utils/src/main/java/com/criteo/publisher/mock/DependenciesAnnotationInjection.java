@@ -16,7 +16,7 @@
 
 package com.criteo.publisher.mock;
 
-import static com.criteo.publisher.util.InstrumentationUtil.isRunningInInstrumentationTest;
+import static com.criteo.publisher.application.InstrumentationUtil.isRunningInInstrumentationTest;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
@@ -148,7 +148,12 @@ class DependenciesAnnotationInjection {
           if (useSpy) {
             // Generate spy from real dependency
             Object realDependency = invocationOnMock.callRealMethod();
-            dependency = spy(realDependency);
+
+            if (mockingDetails(realDependency).isMock()) {
+              dependency = realDependency;
+            } else {
+              dependency = spy(realDependency);
+            }
           } else {
             dependency = mock(field.getType());
           }

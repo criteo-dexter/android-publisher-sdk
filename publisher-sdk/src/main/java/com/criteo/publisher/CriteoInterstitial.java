@@ -16,25 +16,35 @@
 
 package com.criteo.publisher;
 
-import android.util.Log;
+import static com.criteo.publisher.ErrorLogMessage.onUncaughtErrorAtPublicApi;
+import static com.criteo.publisher.interstitial.InterstitialLogMessage.onCheckingIfInterstitialIsLoaded;
+import static com.criteo.publisher.interstitial.InterstitialLogMessage.onInterstitialInitialized;
+import static com.criteo.publisher.interstitial.InterstitialLogMessage.onInterstitialLoading;
+import static com.criteo.publisher.interstitial.InterstitialLogMessage.onInterstitialShowing;
+import static com.criteo.publisher.interstitial.InterstitialLogMessage.onMethodCalledWithNullApplication;
+
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.integration.Integration;
 import com.criteo.publisher.integration.IntegrationRegistry;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.model.InterstitialAdUnit;
 import com.criteo.publisher.model.WebViewData;
 import com.criteo.publisher.network.PubSdkApi;
 import com.criteo.publisher.tasks.InterstitialListenerNotifier;
 
+@Keep
 public class CriteoInterstitial {
 
-  private static final String TAG = CriteoInterstitial.class.getSimpleName();
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   @Nullable
-  private final InterstitialAdUnit interstitialAdUnit;
+  final InterstitialAdUnit interstitialAdUnit;
 
   /**
    * Null means that the singleton Criteo should be used.
@@ -72,6 +82,7 @@ public class CriteoInterstitial {
   ) {
     this.interstitialAdUnit = interstitialAdUnit;
     this.criteo = criteo;
+    logger.log(onInterstitialInitialized(interstitialAdUnit));
   }
 
   public void setCriteoInterstitialAdListener(
@@ -81,40 +92,44 @@ public class CriteoInterstitial {
   }
 
   public void loadAd() {
+    loadAd(new ContextData());
+  }
+
+  public void loadAd(@NonNull ContextData contextData) {
     if (!DependencyProvider.getInstance().isApplicationSet()) {
-      Log.w(TAG, "Calling CriteoInterstitial#loadAd with a null application");
+      logger.log(onMethodCalledWithNullApplication());
       return;
     }
 
     try {
-      doLoadAd();
+      doLoadAd(contextData);
     } catch (Throwable tr) {
-      Log.e(TAG, "Internal error while loading interstitial.", tr);
+      logger.log(onUncaughtErrorAtPublicApi(tr));
     }
   }
 
-  private void doLoadAd() {
+  private void doLoadAd(@NonNull ContextData contextData) {
+    logger.log(onInterstitialLoading(this));
     getIntegrationRegistry().declare(Integration.STANDALONE);
-    getOrCreateController().fetchAdAsync(interstitialAdUnit);
+    getOrCreateController().fetchAdAsync(interstitialAdUnit, contextData);
   }
 
   public void loadAd(@Nullable Bid bid) {
     if (!DependencyProvider.getInstance().isApplicationSet()) {
-      Log.w(TAG, "Calling CriteoInterstitial#loadAd(bidToken) with a null application");
+      logger.log(onMethodCalledWithNullApplication());
       return;
     }
 
     try {
       doLoadAd(bid);
     } catch (Throwable tr) {
-      Log.e(TAG, "Internal error while loading interstitial from bid token.", tr);
+      logger.log(onUncaughtErrorAtPublicApi(tr));
     }
   }
 
-  @Keep
   public void loadAdWithDisplayData(@NonNull String displayData) {
     if (!DependencyProvider.getInstance().isApplicationSet()) {
-      Log.w(TAG, "Calling CriteoInterstitial#loadAdWithDisplayData with a null application");
+      logger.log(onMethodCalledWithNullApplication());
       return;
     }
 
@@ -122,33 +137,37 @@ public class CriteoInterstitial {
   }
 
   private void doLoadAd(@Nullable Bid bid) {
+    logger.log(onInterstitialLoading(this, bid));
     getIntegrationRegistry().declare(Integration.IN_HOUSE);
     getOrCreateController().fetchAdAsync(bid);
   }
 
   public boolean isAdLoaded() {
     try {
-      return getOrCreateController().isAdLoaded();
+      boolean isAdLoaded = getOrCreateController().isAdLoaded();
+      logger.log(onCheckingIfInterstitialIsLoaded(this, isAdLoaded));
+      return isAdLoaded;
     } catch (Throwable tr) {
-      Log.e(TAG, "Internal error while detecting interstitial load state.", tr);
+      logger.log(onUncaughtErrorAtPublicApi(tr));
       return false;
     }
   }
 
   public void show() {
     if (!DependencyProvider.getInstance().isApplicationSet()) {
-      Log.w(TAG, "Calling CriteoInterstitial#show with a null application");
+      logger.log(onMethodCalledWithNullApplication());
       return;
     }
 
     try {
       doShow();
     } catch (Throwable tr) {
-      Log.e(TAG, "Internal error while showing interstitial.", tr);
+      logger.log(onUncaughtErrorAtPublicApi(tr));
     }
   }
 
   private void doShow() {
+    logger.log(onInterstitialShowing(this));
     getOrCreateController().show();
   }
 

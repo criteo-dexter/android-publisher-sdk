@@ -24,6 +24,8 @@ import com.criteo.publisher.BuildConfig;
  */
 public class BuildConfigWrapper {
 
+  public static final String CDB_URL_PROP = "com.criteo.publisher.config.cdbUrl";
+
   @NonNull
   public String getSdkVersion() {
     return BuildConfig.VERSION_NAME;
@@ -31,7 +33,11 @@ public class BuildConfigWrapper {
 
   @NonNull
   public String getCdbUrl() {
-    return BuildConfig.cdbUrl;
+    if (BuildConfig.DEBUG) {
+      return System.getProperty(CDB_URL_PROP, BuildConfig.cdbUrl);
+    } else {
+      return BuildConfig.cdbUrl;
+    }
   }
 
   @NonNull
@@ -67,7 +73,14 @@ public class BuildConfigWrapper {
   }
 
   /**
-   * The relative path in application folder of the sending queue file
+   * Estimated size (in bytes) of metric elements stored in the metric sending queue.
+   */
+  public int getEstimatedSizeOfCsmMetric() {
+    return BuildConfig.estimatedSizeOfCsmMetric;
+  }
+
+  /**
+   * The relative path in application folder of the sending queue file for CSM
    */
   @NonNull
   public String getCsmQueueFilename() {
@@ -90,7 +103,7 @@ public class BuildConfigWrapper {
   }
 
   /**
-   * Included minimum level of logs to print
+   * Included default minimum level of logs to print
    * Values are from {@link android.util.Log}:
    * <ul>
    *     <li>2 = VERBOSE</li>
@@ -101,8 +114,8 @@ public class BuildConfigWrapper {
    *     <li>7 = ASSERT</li>
    * </ul>
    */
-  public int getMinLogLevel() {
-    return BuildConfig.minLogLevel;
+  public int getDefaultMinLogLevel() {
+    return BuildConfig.defaultMinLogLevel;
   }
 
   /**
@@ -117,5 +130,31 @@ public class BuildConfigWrapper {
    */
   public int getAdChoiceIconHeightInDp() {
     return BuildConfig.adChoiceIconHeightInDp;
+  }
+
+  public int getRemoteLogBatchSize() {
+    return BuildConfig.remoteLogBatchSize;
+  }
+
+  /**
+   * Maximum size (in bytes) of elements stored in the remote log sending queue.
+   */
+  public int getMaxSizeOfRemoteLogSendingQueue() {
+    return BuildConfig.maxSizeOfRemoteLogSendingQueue;
+  }
+
+  /**
+   * Estimated size (in bytes) of elements stored in the remote log sending queue.
+   */
+  public int getEstimatedSizeOfRemoteLog() {
+    return BuildConfig.estimatedSizeOfRemoteLog;
+  }
+
+  /**
+   * The relative path in application folder of the sending queue file for remote logs
+   */
+  @NonNull
+  public String getRemoteLogQueueFilename() {
+    return BuildConfig.remoteLogQueueFilename;
   }
 }

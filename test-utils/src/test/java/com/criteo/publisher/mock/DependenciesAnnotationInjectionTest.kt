@@ -17,14 +17,14 @@
 package com.criteo.publisher.mock
 
 import com.criteo.publisher.mock.DependenciesAnnotationInjection.InjectionException
-import com.nhaarman.mockitokotlin2.anyOrNull
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.spy
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Test
 import org.mockito.Mockito.mockingDetails
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.spy
 import javax.inject.Inject
 
 class DependenciesAnnotationInjectionTest {
@@ -108,6 +108,24 @@ class DependenciesAnnotationInjectionTest {
   }
 
   @Test
+  fun processInject_GivenADependencyProviderWithProvidedMock_ReuseMock() {
+    val transitiveDependency = mock<TransitivelyProvidedDummyDependency>()
+    val injectedDependency = InjectedDummyDependency(transitiveDependency)
+    val dependencyProvider = spy(
+        DummyDependencyProviderWithInjectedDependency(
+            injectedDependency
+        )
+    )
+
+    val dummyTest = DummyTestWithTransitivelyProvided()
+
+    val injection = DependenciesAnnotationInjection(dependencyProvider)
+    injection.process(dummyTest)
+
+    assertThat(dummyTest.transitivelyProvided).isSameAs(transitiveDependency)
+  }
+
+  @Test
   fun processInject_GivenFieldWithoutProvidedDependency_ThrowException() {
     val dependencyProvider = mock<DummyDependencyProvider>()
 
@@ -166,14 +184,16 @@ class DependenciesAnnotationInjectionTest {
     lateinit var ignoredDependency: DummyDependency
 
     fun injectedDependency() = injectedDependency
-
   }
 
   class DummyTestWithNotProvidedDependency {
-
     @Inject
     lateinit var notProvidedDependency: NotProvidedDummyDependency
+  }
 
+  class DummyTestWithTransitivelyProvided {
+    @SpyBean
+    lateinit var transitivelyProvided: TransitivelyProvidedDummyDependency
   }
 
   class NotProvidedDummyDependency
@@ -183,10 +203,15 @@ class DependenciesAnnotationInjectionTest {
   open class SpyDummyDependency(val transitiveSpy: TransitiveSpyDummyDependency)
   open class TransitiveSpyDummyDependency
 
+  open class InjectedDummyDependency(val transitiveDependency: TransitivelyProvidedDummyDependency)
+  open class TransitivelyProvidedDummyDependency
+
+  @Suppress("UnnecessaryAbstractClass")
   abstract class SuperDummyDependencyProvider {
     open fun provideSuperDummyDependency() = SuperDummyDependency(
         provideMockDummyDependency(1),
-        provideSpyDummyDependency())
+        provideSpyDummyDependency()
+    )
 
     open fun provideMockDummyDependency(ignored: Any?) = MockDummyDependency()
     open fun provideSpyDummyDependency(): SpyDummyDependency {
@@ -195,6 +220,7 @@ class DependenciesAnnotationInjectionTest {
     open fun provideTransitiveSpyDummyDependency() = TransitiveSpyDummyDependency()
   }
 
+  @Suppress("UnusedPrivateMember")
   open class DummyDependencyProvider : SuperDummyDependencyProvider() {
     private fun ignoredDummyDependency() = DummyDependency(
         provideMockDummyDependency(2),
@@ -206,13 +232,18 @@ class DependenciesAnnotationInjectionTest {
 
     open fun provideDummyDependency() = DummyDependency(
         provideMockDummyDependency(4),
-        provideSpyDummyDependency())
+        provideSpyDummyDependency()
+    )
   }
 
   open class DummyTooManyDependencyProvider : DummyDependencyProvider() {
     open fun provideDummyDependency2() = DummyDependency(
         provideMockDummyDependency(5),
-        provideSpyDummyDependency())
+        provideSpyDummyDependency()
+    )
   }
 
+  open class DummyDependencyProviderWithInjectedDependency(private val injectedDependency: InjectedDummyDependency) {
+    open fun provideTransitivelyProvidedDummyDependency() = injectedDependency.transitiveDependency
+  }
 }

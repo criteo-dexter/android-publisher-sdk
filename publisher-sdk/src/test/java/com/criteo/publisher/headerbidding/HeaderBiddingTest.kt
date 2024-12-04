@@ -21,28 +21,27 @@ import com.criteo.publisher.integration.Integration
 import com.criteo.publisher.integration.IntegrationRegistry
 import com.criteo.publisher.model.CdbResponseSlot
 import com.criteo.publisher.util.AdUnitType.CRITEO_CUSTOM_NATIVE
-import com.nhaarman.mockitokotlin2.any
-import com.nhaarman.mockitokotlin2.anyOrNull
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.mock
-import com.nhaarman.mockitokotlin2.never
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.verifyNoMoreInteractions
-import com.nhaarman.mockitokotlin2.verifyZeroInteractions
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
+import org.mockito.kotlin.verifyNoMoreInteractions
 
 class HeaderBiddingTest {
 
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
+
   @Mock
   private lateinit var integrationRegistry: IntegrationRegistry
-
-  @Before
-  fun setUp() {
-    MockitoAnnotations.initMocks(this)
-  }
 
   @Test
   fun enrichBid_GivenNullAdObject_DoNothing() {
@@ -52,9 +51,9 @@ class HeaderBiddingTest {
 
     headerBidding.enrichBid(null, bid)
 
-    verifyZeroInteractions(bid)
-    verifyZeroInteractions(handler)
-    verifyZeroInteractions(integrationRegistry)
+    verifyNoInteractions(bid)
+    verifyNoInteractions(handler)
+    verifyNoInteractions(integrationRegistry)
   }
 
   @Test

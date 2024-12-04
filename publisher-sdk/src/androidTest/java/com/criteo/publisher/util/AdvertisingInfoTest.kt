@@ -16,13 +16,21 @@
 package com.criteo.publisher.util
 
 import android.content.Context
+import androidx.test.filters.FlakyTest
+import com.criteo.publisher.concurrent.ThreadingUtil.callOnMainThreadAndWait
+import com.criteo.publisher.concurrent.ThreadingUtil.runOnMainThreadAndWait
 import com.criteo.publisher.mock.MockedDependenciesRule
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.spy
+import com.criteo.publisher.mock.SpyBean
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
+import java.util.concurrent.Executor
 import javax.inject.Inject
 
 class AdvertisingInfoTest {
@@ -33,32 +41,124 @@ class AdvertisingInfoTest {
 
   @Rule
   @JvmField
-  val mockedDependenciesRule = MockedDependenciesRule()
+  val mockedDependenciesRule = MockedDependenciesRule().withoutMockedAdvertiserIdClient()
 
   @Inject
   private lateinit var context: Context
 
+  @Inject
+  private lateinit var executor: Executor
+
+  @SpyBean
   private lateinit var advertisingInfo: AdvertisingInfo
 
-  @Before
-  fun setUp() {
-    advertisingInfo = AdvertisingInfo(context)
+  @Test
+  fun prefetchAsync_FromWorkerThread_DispatchAsync() {
+    val initialThread = Thread.currentThread()
+
+    doAnswer {
+      assertThat(Thread.currentThread()).isNotEqualTo(initialThread)
+      null
+    }.whenever(advertisingInfo).advertisingId
+
+    advertisingInfo.prefetchAsync()
+    mockedDependenciesRule.waitForIdleState()
+
+    verify(advertisingInfo).advertisingId
   }
 
   @Test
+  fun prefetchAsync_FromMainThread_DispatchAsync() {
+    lateinit var initialThread: Thread
+
+    doAnswer {
+      assertThat(Thread.currentThread()).isNotEqualTo(initialThread)
+      null
+    }.whenever(advertisingInfo).advertisingId
+
+    runOnMainThreadAndWait {
+      initialThread = Thread.currentThread()
+      advertisingInfo.prefetchAsync()
+    }
+    mockedDependenciesRule.waitForIdleState()
+
+    verify(advertisingInfo).advertisingId
+  }
+
+  @Test
+  @FlakyTest(detail="Fetching the advertising info can yield TimeoutException on flaky network")
   fun getAdvertisingId_GivenPlayServiceAdsIdentifierInClasspath_ReturnNonNull() {
     // Assume that the advertising ID is available, this is a case on new clean emulators/devices
 
     val advertisingId = advertisingInfo.advertisingId
 
-    assertThat(advertisingId).isNotNull()
+    assertThat(advertisingId).isNotEmpty().isNotEqualTo(DEVICE_ID_LIMITED)
+  }
+
+  @Test
+  fun getAdvertisingId_CalledFromUiThread_ReturnNull() {
+    // Assume that the advertising ID is available, this is a case on new clean emulators/devices
+
+    val advertisingId = callOnMainThreadAndWait {
+      advertisingInfo.advertisingId
+    }
+
+    assertThat(advertisingId).isNull()
+  }
+
+  @Test
+  @FlakyTest(detail="Fetching the advertising info can yield TimeoutException on flaky network")
+  fun getAdvertisingId_CalledFromUiThreadAfterBeingCalledOnWorkerThread_ReturnNonNull() {
+    // Assume that the advertising ID is available, this is a case on new clean emulators/devices
+
+    val advertisingIdFromWorkerThread = advertisingInfo.advertisingId
+    val advertisingIdFromMainThread = callOnMainThreadAndWait {
+      advertisingInfo.advertisingId
+    }
+
+    assertThat(advertisingIdFromWorkerThread).isNotEmpty()
+        .isNotEqualTo(DEVICE_ID_LIMITED)
+        .isEqualTo(advertisingIdFromMainThread)
+  }
+
+  @Test
+  @FlakyTest(detail="Fetching the advertising info can yield TimeoutException on flaky network")
+  fun getAdvertisingId_CalledFromUiThreadAfterAFinishedPrefetch_ReturnNonNull() {
+    // Assume that the advertising ID is available, this is a case on new clean emulators/devices
+
+    advertisingInfo.prefetchAsync()
+    mockedDependenciesRule.waitForIdleState()
+
+    val advertisingId = callOnMainThreadAndWait {
+      advertisingInfo.advertisingId
+    }
+
+    assertThat(advertisingId).isNotEmpty().isNotEqualTo(DEVICE_ID_LIMITED)
+  }
+
+  @Test
+  @FlakyTest(detail="Fetching the advertising info can yield TimeoutException on flaky network")
+  fun getAdvertisingId_CalledFromUiThreadAfterAFinishedPrefetchFromMainThread_ReturnNonNull() {
+    // Assume that the advertising ID is available, this is a case on new clean emulators/devices
+
+    runOnMainThreadAndWait {
+      advertisingInfo.prefetchAsync()
+    }
+    mockedDependenciesRule.waitForIdleState()
+
+    val advertisingId = callOnMainThreadAndWait {
+      advertisingInfo.advertisingId
+    }
+
+    assertThat(advertisingId).isNotEmpty().isNotEqualTo(DEVICE_ID_LIMITED)
   }
 
   @Test
   fun getAdvertisingId_GivenLimitedAdTracking_ReturnLimitedDeviceId() {
-    advertisingInfo = spy(advertisingInfo) {
-      on { isLimitAdTrackingEnabled } doReturn true
+    val advertisingIdClient = spy(AdvertisingInfo.SafeAdvertisingIdClient()) {
+      doReturn(AdvertisingInfo.AdvertisingIdResult("something", true)).whenever(mock).getAdvertisingIdResult(any())
     }
+    advertisingInfo = AdvertisingInfo(context, executor, advertisingIdClient)
 
     val advertisingId = advertisingInfo.advertisingId
 
@@ -66,6 +166,7 @@ class AdvertisingInfoTest {
   }
 
   @Test
+  @FlakyTest(detail="Fetching the advertising info can yield TimeoutException on flaky network")
   fun isLimitAdTrackingEnabled_GivenPlayServiceAdsIdentifierInClasspath_ReturnFalse() {
     // Assume that the advertising ID is available, this is a case on new clean emulators/devices
 
@@ -74,4 +175,14 @@ class AdvertisingInfoTest {
     assertThat(isLimitAdTrackingEnabled).isFalse()
   }
 
+  @Test
+  fun isLimitAdTrackingEnabled_CalledFromUiThread_ReturnFalse() {
+    // Assume that the advertising ID is available, this is a case on new clean emulators/devices
+
+    val isLimitAdTrackingEnabled = callOnMainThreadAndWait {
+      advertisingInfo.isLimitAdTrackingEnabled
+    }
+
+    assertThat(isLimitAdTrackingEnabled).isFalse()
+  }
 }

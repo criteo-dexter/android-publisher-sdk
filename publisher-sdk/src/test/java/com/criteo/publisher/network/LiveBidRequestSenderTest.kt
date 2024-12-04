@@ -18,24 +18,29 @@ package com.criteo.publisher.network
 
 import com.criteo.publisher.Clock
 import com.criteo.publisher.LiveCdbCallListener
+import com.criteo.publisher.context.ContextData
 import com.criteo.publisher.model.CacheAdUnit
 import com.criteo.publisher.model.CdbRequest
 import com.criteo.publisher.model.CdbRequestFactory
 import com.criteo.publisher.model.CdbResponse
 import com.criteo.publisher.model.Config
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.whenever
-import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
 class LiveBidRequestSenderTest {
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
 
   @Mock
   private lateinit var pubSdkApi: PubSdkApi
@@ -48,6 +53,9 @@ class LiveBidRequestSenderTest {
 
   @Mock
   private lateinit var cacheAdUnit: CacheAdUnit
+
+  @Mock
+  private lateinit var contextData: ContextData
 
   @Mock
   private lateinit var liveCdbCallListener: LiveCdbCallListener
@@ -64,16 +72,11 @@ class LiveBidRequestSenderTest {
   @Mock
   private lateinit var clock: Clock
 
-  @Before
-  fun setUp() {
-    MockitoAnnotations.initMocks(this)
-  }
-
   @Test
   fun timeBudgetTimerKicksOff_ThenTimeBudgetExceededTrigger() {
     whenever(cdbRequestFactory.userAgent).thenReturn(userAgentFuture)
     whenever(userAgentFuture.get()).thenReturn("fake_user_agent")
-    whenever(cdbRequestFactory.createRequest(any())).thenReturn(cdbRequest)
+    whenever(cdbRequestFactory.createRequest(eq(listOf(cacheAdUnit)), eq(contextData))).thenReturn(cdbRequest)
     whenever(pubSdkApi.loadCdb(eq(cdbRequest), any())).thenReturn(cdbResponse)
     whenever(config.liveBiddingTimeBudgetInMillis).thenReturn(1)
 
@@ -88,6 +91,7 @@ class LiveBidRequestSenderTest {
 
     liveBidRequestSender.sendLiveBidRequest(
         cacheAdUnit,
+        contextData,
         liveCdbCallListener
     )
 
@@ -101,5 +105,4 @@ class LiveBidRequestSenderTest {
       }
 
   private fun getScheduledExecutorService() = Executors.newSingleThreadScheduledExecutor()
-
 }

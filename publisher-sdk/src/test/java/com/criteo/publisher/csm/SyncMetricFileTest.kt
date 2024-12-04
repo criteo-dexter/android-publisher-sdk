@@ -17,28 +17,38 @@
 package com.criteo.publisher.csm
 
 import android.util.AtomicFile
-import com.nhaarman.mockitokotlin2.*
+import com.criteo.publisher.util.JsonSerializer
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.doNothing
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.inOrder
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.whenever
 
 class SyncMetricFileTest {
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
 
   @Mock
   private lateinit var atomicFile: AtomicFile
 
   @Mock
-  private lateinit var parser: MetricParser
+  private lateinit var jsonSerializer: JsonSerializer
 
   private lateinit var metricFile: SyncMetricFile
 
   @Before
   fun setUp() {
-    MockitoAnnotations.initMocks(this)
-
-    metricFile = spy(SyncMetricFile("id", atomicFile, parser))
+    metricFile = spy(SyncMetricFile("id", atomicFile, jsonSerializer))
   }
 
   @Test
@@ -99,5 +109,4 @@ class SyncMetricFileTest {
     inOrder.verify(metricFile).write(metric)
     inOrder.verifyNoMoreInteractions()
   }
-
 }

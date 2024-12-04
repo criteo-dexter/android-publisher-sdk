@@ -25,14 +25,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.criteo.publisher.concurrent.DirectMockRunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.CdbResponseSlot;
+import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class ConsumableBidLoaderTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private BidManager bidManager;
@@ -43,28 +51,40 @@ public class ConsumableBidLoaderTest {
   @Mock
   private BidResponseListener listener;
 
+  private final DirectMockRunOnUiThreadExecutor runOnUiThreadExecutor = new DirectMockRunOnUiThreadExecutor();
+
   private ConsumableBidLoader consumableBidLoader;
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
+    doAnswer(invocation -> {
+      runOnUiThreadExecutor.expectIsRunningInExecutor();
+      return null;
+    }).when(listener).onResponse(any());
 
     consumableBidLoader = new ConsumableBidLoader(
         bidManager,
-        clock
+        clock,
+        runOnUiThreadExecutor
     );
+  }
+
+  @After
+  public void tearDown() throws Exception {
+    runOnUiThreadExecutor.verifyExpectations();
   }
 
   @Test
   public void getBidResponse_GivenBidManagerYieldingNoBid_ReturnNoBid() throws Exception {
     AdUnit adUnit = mock(AdUnit.class);
+    ContextData contextData = mock(ContextData.class);
 
     doAnswer(invocation -> {
-      invocation.<BidListener>getArgument(1).onNoBid();
+      invocation.<BidListener>getArgument(2).onNoBid();
       return null;
-    }).when(bidManager).getBidForAdUnit(eq(adUnit), any());
+    }).when(bidManager).getBidForAdUnit(eq(adUnit), eq(contextData), any());
 
-    consumableBidLoader.loadBid(adUnit, listener);
+    consumableBidLoader.loadBid(adUnit, contextData, listener);
 
     verify(listener).onResponse(null);
   }
@@ -72,16 +92,17 @@ public class ConsumableBidLoaderTest {
   @Test
   public void getBidResponse_GivenBidManagerYieldingBid_ReturnBid() throws Exception {
     AdUnit adUnit = mock(AdUnit.class);
+    ContextData contextData = mock(ContextData.class);
     CdbResponseSlot slot = mock(CdbResponseSlot.class);
 
     when(slot.getCpmAsNumber()).thenReturn(42.1337);
 
     doAnswer(invocation -> {
-      invocation.<BidListener>getArgument(1).onBidResponse(slot);
+      invocation.<BidListener>getArgument(2).onBidResponse(slot);
       return null;
-    }).when(bidManager).getBidForAdUnit(eq(adUnit), any());
+    }).when(bidManager).getBidForAdUnit(eq(adUnit), eq(contextData), any());
 
-    consumableBidLoader.loadBid(adUnit, listener);
+    consumableBidLoader.loadBid(adUnit, contextData, listener);
 
     verify(listener).onResponse(argThat(bidResponse -> {
       assertThat(bidResponse.getPrice()).isEqualTo(42.1337);

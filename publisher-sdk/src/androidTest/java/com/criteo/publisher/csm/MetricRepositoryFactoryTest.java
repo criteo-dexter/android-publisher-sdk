@@ -18,14 +18,13 @@ package com.criteo.publisher.csm;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
-import androidx.test.InstrumentationRegistry;
 import com.criteo.publisher.mock.MockedDependenciesRule;
+import com.criteo.publisher.mock.SpyBean;
 import com.criteo.publisher.util.BuildConfigWrapper;
+import com.criteo.publisher.util.JsonSerializer;
 import javax.inject.Inject;
 import org.junit.After;
 import org.junit.Before;
@@ -37,33 +36,31 @@ public class MetricRepositoryFactoryTest {
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
 
+  @Inject
   private Context context;
 
   @Inject
-  private MetricParser parser;
+  private JsonSerializer jsonSerializer;
 
+  @SpyBean
   private BuildConfigWrapper buildConfigWrapper;
 
   private MetricRepositoryFactory factory;
 
   @Before
   public void setUp() throws Exception {
-    context = InstrumentationRegistry.getContext().getApplicationContext();
-
-    buildConfigWrapper = spy(mockedDependenciesRule.getDependencyProvider().provideBuildConfigWrapper());
-    doReturn(buildConfigWrapper).when(mockedDependenciesRule.getDependencyProvider()).provideBuildConfigWrapper();
     when(buildConfigWrapper.getCsmDirectoryName()).thenReturn("directory");
 
     factory = new MetricRepositoryFactory(
         context,
-        parser,
+        jsonSerializer,
         buildConfigWrapper
     );
   }
 
   @After
   public void tearDown() throws Exception {
-    MetricDirectoryHelper.clear(new MetricDirectory(context, buildConfigWrapper, parser));
+    MetricDirectoryHelper.clear(new MetricDirectory(context, buildConfigWrapper, jsonSerializer));
   }
 
   @Test

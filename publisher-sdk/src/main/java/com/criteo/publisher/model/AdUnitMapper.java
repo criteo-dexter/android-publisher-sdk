@@ -16,13 +16,20 @@
 
 package com.criteo.publisher.model;
 
-import android.util.Log;
+import static com.criteo.publisher.BiddingLogMessage.onInvalidAdUnit;
+import static com.criteo.publisher.BiddingLogMessage.onUnsupportedAdFormat;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
-import com.criteo.publisher.util.AndroidUtil;
+import com.criteo.publisher.integration.Integration;
+import com.criteo.publisher.integration.IntegrationRegistry;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
+import com.criteo.publisher.util.AdUnitType;
 import com.criteo.publisher.util.DeviceUtil;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -30,8 +37,6 @@ import java.util.List;
 import java.util.Set;
 
 public class AdUnitMapper {
-
-  private static final String TAG = AdUnitMapper.class.getSimpleName();
 
   /**
    * Ad units are grouped into chunks so bid request size stay reasonable and this may improve the
@@ -52,12 +57,28 @@ public class AdUnitMapper {
    */
   private static final AdSize NATIVE_SIZE = new AdSize(2, 2);
 
-  private final AndroidUtil androidUtil;
+  /**
+   * Only GAM AppBidding is supporting rewarded ads because they are handling the display themselves.
+   */
+  private static final Collection<Integration> SUPPORTED_INTEGRATION_FOR_REWARDED = Arrays.asList(
+      Integration.GAM_APP_BIDDING
+  );
+
+  @NonNull
+  private final Logger logger = LoggerFactory.getLogger(getClass());
+
+  @NonNull
   private final DeviceUtil deviceUtil;
 
-  public AdUnitMapper(AndroidUtil androidUtil, DeviceUtil deviceUtil) {
-    this.androidUtil = androidUtil;
+  @NonNull
+  private final IntegrationRegistry integrationRegistry;
+
+  public AdUnitMapper(
+      @NonNull DeviceUtil deviceUtil,
+      @NonNull IntegrationRegistry integrationRegistry
+  ) {
     this.deviceUtil = deviceUtil;
+    this.integrationRegistry = integrationRegistry;
   }
 
   /**
@@ -92,6 +113,7 @@ public class AdUnitMapper {
         BannerAdUnit bannerAdUnit = (BannerAdUnit) adUnit;
         return bannerAdUnit.getSize();
       case CRITEO_INTERSTITIAL:
+      case CRITEO_REWARDED:
         return deviceUtil.getCurrentScreenSize();
       case CRITEO_CUSTOM_NATIVE:
         return NATIVE_SIZE;
@@ -129,13 +151,21 @@ public class AdUnitMapper {
   private List<CacheAdUnit> filterInvalidCacheAdUnits(Collection<CacheAdUnit> cacheAdUnits) {
     List<CacheAdUnit> validatedCacheAdUnits = new ArrayList<>();
 
+    Integration integration = integrationRegistry.readIntegration();
+
     for (CacheAdUnit cacheAdUnit : cacheAdUnits) {
       if (cacheAdUnit.getPlacementId().isEmpty()
           || cacheAdUnit.getSize().getWidth() <= 0
           || cacheAdUnit.getSize().getHeight() <= 0) {
-        Log.e(TAG, "Found an invalid AdUnit: " + cacheAdUnit);
+        logger.log(onInvalidAdUnit(cacheAdUnit));
         continue;
       }
+
+      if (cacheAdUnit.getAdUnitType() == AdUnitType.CRITEO_REWARDED && !SUPPORTED_INTEGRATION_FOR_REWARDED.contains(integration)) {
+        logger.log(onUnsupportedAdFormat(cacheAdUnit, integration));
+        continue;
+      }
+
       validatedCacheAdUnits.add(cacheAdUnit);
     }
 

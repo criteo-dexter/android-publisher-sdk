@@ -17,12 +17,11 @@
 package com.criteo.publisher.csm;
 
 import android.content.Context;
-import android.os.Build.VERSION_CODES;
 import android.util.AtomicFile;
 import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 import com.criteo.publisher.util.BuildConfigWrapper;
+import com.criteo.publisher.util.JsonSerializer;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.util.Arrays;
@@ -40,16 +39,16 @@ class MetricDirectory {
   private final BuildConfigWrapper buildConfigWrapper;
 
   @NonNull
-  private final MetricParser parser;
+  private final JsonSerializer jsonSerializer;
 
   MetricDirectory(
       @NonNull Context context,
       @NonNull BuildConfigWrapper buildConfigWrapper,
-      @NonNull MetricParser parser
+      @NonNull JsonSerializer jsonSerializer
   ) {
     this.context = context;
     this.buildConfigWrapper = buildConfigWrapper;
-    this.parser = parser;
+    this.jsonSerializer = jsonSerializer;
   }
 
   Collection<File> listFiles() {
@@ -74,11 +73,10 @@ class MetricDirectory {
   }
 
   @NonNull
-  @RequiresApi(api = VERSION_CODES.JELLY_BEAN_MR1)
   SyncMetricFile createSyncMetricFile(@NonNull File metricFile) {
     String impressionId = getImpressionIdFromMetricFilename(metricFile);
     AtomicFile atomicFile = new AtomicFile(metricFile);
-    return new SyncMetricFile(impressionId, atomicFile, parser);
+    return new SyncMetricFile(impressionId, atomicFile, jsonSerializer);
   }
 
   @VisibleForTesting

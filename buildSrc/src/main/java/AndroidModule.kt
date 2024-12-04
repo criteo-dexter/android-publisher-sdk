@@ -19,50 +19,54 @@ import groovy.util.ConfigObject
 import groovy.util.ConfigSlurper
 import org.gradle.api.JavaVersion
 import org.gradle.api.Project
-import org.gradle.kotlin.dsl.getValue
-import org.gradle.kotlin.dsl.getting
-import kotlin.reflect.KClass
+import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.kotlin.dsl.*
 
 class AndroidModule(private val project: Project) {
 
-  private val configByName = mutableMapOf<String, ConfigObject?>()
+  private val configByName = mutableMapOf<String, ConfigObject>()
 
-  inline fun <reified T : Any> addBuildConfigField(name: String) {
-    addBuildConfigField(name, T::class)
+  @Suppress("UNCHECKED_CAST")
+  fun <T : Any> addBuildConfigField(name: String) {
+    addBuildConfigField(name) {
+      getConfig(getName())[name] as T
+    }
   }
 
-  fun <T : Any> addBuildConfigField(name: String, klass: KClass<T>) {
+  fun <T : Any> addBuildConfigField(name: String, value: T) {
+    addBuildConfigField(name) { value }
+  }
+
+  fun <T : Any> addBuildConfigField(name: String, getter: BuildType.() -> T) {
     project.androidBase {
       buildTypes.all {
-        getConfig(getName())?.let {
-          when (klass) {
-            String::class -> addStringField(name, it)
-            Boolean::class -> addPrimitiveField(name, "boolean", it)
-            Int::class -> addPrimitiveField(name, "int", it)
-            else -> {
-              throw UnsupportedOperationException()
-            }
+        when (val value = getter(this)) {
+          is String -> addStringField(name, value)
+          is Boolean -> addPrimitiveField(name, "boolean", value)
+          is Int -> addPrimitiveField(name, "int", value)
+          else -> {
+            throw UnsupportedOperationException()
           }
         }
       }
     }
   }
 
-  private fun BuildType.addStringField(name: String, config: ConfigObject) {
-    buildConfigField("String", name, "\"${config[name]}\"")
+  private fun BuildType.addStringField(name: String, value: String) {
+    buildConfigField("String", name, "\"$value\"")
   }
 
-  private fun BuildType.addPrimitiveField(name: String, type: String, config: ConfigObject) {
-    buildConfigField(type, name, "${config[name]}")
+  private fun BuildType.addPrimitiveField(name: String, type: String, value: Any) {
+    buildConfigField(type, name, "$value")
   }
 
-  private fun getConfig(name: String): ConfigObject? {
+  private fun getConfig(name: String): ConfigObject {
     return configByName.computeIfAbsent(name) {
       val configFile = project.file("config.groovy")
       if (configFile.exists()) {
-        ConfigSlurper(it).parse(configFile.toURL())
+        ConfigSlurper(it).parse(configFile.toURI().toURL())
       } else {
-        null
+        throw UnsupportedOperationException("Missing config.groovy file")
       }
     }
   }
@@ -81,20 +85,24 @@ fun Project.androidAppModule(applicationId: String, configure: AndroidModule.() 
 fun Project.androidLibModule(configure: AndroidModule.() -> Unit = {}) {
   defaultAndroidModule()
 
-  configure(AndroidModule(this))
+  configure(AndroidModule(this).apply {
+    // Version stopped to be injected for library
+    // https://developer.android.com/studio/releases/gradle-plugin?buildsystem=ndk-build#version_properties_removed_from_buildconfig_class_in_library_projects
+    addBuildConfigField("VERSION_NAME", sdkVersion())
+  })
 }
 
 private fun Project.defaultAndroidModule() {
   androidBase {
-    compileSdkVersion(29)
-    buildToolsVersion("29.0.3")
+    compileSdkVersion(34)
 
     defaultConfig {
-      minSdkVersion(16)
-      targetSdkVersion(29)
+      minSdkVersion(21)
+      targetSdkVersion(34)
       versionCode = 1
       versionName = sdkVersion()
       testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+      testInstrumentationRunnerArgument("disableAnalytics", "true")
     }
 
     fun BuildType.addProguardIfExists() {
@@ -137,6 +145,8 @@ private fun Project.defaultAndroidModule() {
 
     lintOptions {
       isAbortOnError = true
+      // Does not work when disable using lint.xml file below
+      disable("NotificationPermission")
 
       file("lint.xml").takeIf { it.exists() }
           ?.let { lintConfig = it }
@@ -144,6 +154,15 @@ private fun Project.defaultAndroidModule() {
 
     testOptions {
       unitTests.isReturnDefaultValues = true
+    }
+
+    jacoco {
+      version = Deps.Jacoco.version
+    }
+
+    packagingOptions {
+      // Both AssertJ and ByteBuddy (via Mockito) bring this and the duplication yields an error
+      exclude("META-INF/licenses/ASM")
     }
   }
 
@@ -159,4 +178,14 @@ private fun Project.defaultAndroidModule() {
   }
 
   generateCoverageReportForJvmTests()
+
+  jacoco?.apply {
+    toolVersion = Deps.Jacoco.version
+  }
+
+  afterEvaluate {
+    tasks.withType<JavaCompile> {
+      options.compilerArgs.add("-Xlint:deprecation")
+    }
+  }
 }

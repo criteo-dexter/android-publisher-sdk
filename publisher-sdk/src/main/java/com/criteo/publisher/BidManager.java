@@ -16,16 +16,17 @@
 
 package com.criteo.publisher;
 
-import static android.content.ContentValues.TAG;
-
-import android.util.Log;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import com.criteo.publisher.bid.BidLifecycleListener;
 import com.criteo.publisher.cache.SdkCache;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.csm.MetricSendingQueueConsumer;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
+import com.criteo.publisher.logging.RemoteLogSendingQueueConsumer;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.AdUnitMapper;
 import com.criteo.publisher.model.CacheAdUnit;
@@ -35,6 +36,7 @@ import com.criteo.publisher.model.CdbResponseSlot;
 import com.criteo.publisher.model.Config;
 import com.criteo.publisher.network.BidRequestSender;
 import com.criteo.publisher.network.LiveBidRequestSender;
+import com.criteo.publisher.privacy.ConsentData;
 import com.criteo.publisher.util.ApplicationStoppedListener;
 import java.util.Collections;
 import java.util.List;
@@ -46,6 +48,9 @@ public class BidManager implements ApplicationStoppedListener {
    * Default TTL (15 minutes in seconds) overridden on immediate bids (CPM > 0, TTL = 0).
    */
   private static final int DEFAULT_TTL_IN_SECONDS = 15 * 60;
+
+  @NonNull
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   @NonNull
   @GuardedBy("cacheLock")
@@ -75,6 +80,12 @@ public class BidManager implements ApplicationStoppedListener {
   @NonNull
   private final MetricSendingQueueConsumer metricSendingQueueConsumer;
 
+  @NonNull
+  private final RemoteLogSendingQueueConsumer remoteLogSendingQueueConsumer;
+
+  @NonNull
+  private final ConsentData consentData;
+
   BidManager(
       @NonNull SdkCache sdkCache,
       @NonNull Config config,
@@ -83,7 +94,9 @@ public class BidManager implements ApplicationStoppedListener {
       @NonNull BidRequestSender bidRequestSender,
       @NonNull LiveBidRequestSender liveBidRequestSender,
       @NonNull BidLifecycleListener bidLifecycleListener,
-      @NonNull MetricSendingQueueConsumer metricSendingQueueConsumer
+      @NonNull MetricSendingQueueConsumer metricSendingQueueConsumer,
+      @NonNull RemoteLogSendingQueueConsumer remoteLogSendingQueueConsumer,
+      @NonNull ConsentData consentData
   ) {
     this.cache = sdkCache;
     this.config = config;
@@ -93,26 +106,34 @@ public class BidManager implements ApplicationStoppedListener {
     this.liveBidRequestSender = liveBidRequestSender;
     this.bidLifecycleListener = bidLifecycleListener;
     this.metricSendingQueueConsumer = metricSendingQueueConsumer;
+    this.remoteLogSendingQueueConsumer = remoteLogSendingQueueConsumer;
+    this.consentData = consentData;
   }
 
   /**
    * Notify the given listener for bid or no bid for the given ad unit.
    * <p>
-   * {@link BidListener#onBidResponse(CdbResponseSlot)} is invoked only if a bid is available and valide.
+   * {@link BidListener#onBidResponse(CdbResponseSlot)} is invoked only if a bid is available and
+   * valid.
    *
    * @param adUnit ad unit to get a bid from (nullable only to accommodate callers)
+   * @param contextData
    * @param bidListener listener to notify
    */
-  public void getBidForAdUnit(@Nullable AdUnit adUnit, @NonNull BidListener bidListener) {
+  public void getBidForAdUnit(
+      @Nullable AdUnit adUnit,
+      @NonNull ContextData contextData,
+      @NonNull BidListener bidListener
+  ) {
     if (adUnit == null) {
       bidListener.onNoBid();
       return;
     }
 
     if (config.isLiveBiddingEnabled()) {
-      getLiveBidForAdUnit(adUnit, bidListener);
+      getLiveBidForAdUnit(adUnit, contextData, bidListener);
     } else {
-      CdbResponseSlot cdbResponseSlot = getBidForAdUnitAndPrefetch(adUnit);
+      CdbResponseSlot cdbResponseSlot = getBidForAdUnitAndPrefetch(adUnit, contextData);
       if (cdbResponseSlot != null) {
         bidListener.onBidResponse(cdbResponseSlot);
       } else {
@@ -148,11 +169,15 @@ public class BidManager implements ApplicationStoppedListener {
    * </ul>
    *
    * @param adUnit Declaration of ad unit to get a bid from
+   * @param contextData Context data provided by the publisher
    * @return a valid bid that may be displayed or <code>null</code> that should be ignored
    */
   @Nullable
   @VisibleForTesting
-  CdbResponseSlot getBidForAdUnitAndPrefetch(@Nullable AdUnit adUnit) {
+  CdbResponseSlot getBidForAdUnitAndPrefetch(
+      @Nullable AdUnit adUnit,
+      @NonNull ContextData contextData
+  ) {
     if (killSwitchEngaged()) {
       return null;
     }
@@ -163,7 +188,7 @@ public class BidManager implements ApplicationStoppedListener {
 
     synchronized (cacheLock) {
       if (!isSilencedFor(cacheAdUnit)) {
-        fetchForCache(cacheAdUnit);
+        fetchForCache(cacheAdUnit, contextData);
       }
 
       return consumeCachedBid(cacheAdUnit);
@@ -178,6 +203,16 @@ public class BidManager implements ApplicationStoppedListener {
     synchronized (cacheLock) {
       CdbResponseSlot cdbResponseSlot = cache.peekAdUnit(cacheAdUnit);
       return isBidCurrentlySilent(cdbResponseSlot);
+    }
+  }
+
+  private void consumeCachedBidIfExpired(@NonNull CacheAdUnit cacheAdUnit) {
+    synchronized (cacheLock) {
+      CdbResponseSlot cdbResponseSlot = cache.peekAdUnit(cacheAdUnit);
+      if (cdbResponseSlot != null && hasBidExpired(cdbResponseSlot)) {
+        cache.remove(cacheAdUnit);
+        bidLifecycleListener.onBidConsumed(cacheAdUnit, cdbResponseSlot);
+      }
     }
   }
 
@@ -215,12 +250,16 @@ public class BidManager implements ApplicationStoppedListener {
   /**
    * load data for next time
    */
-  private void fetchForCache(CacheAdUnit cacheAdUnit) {
-    sendBidRequest(Collections.singletonList(cacheAdUnit));
+  private void fetchForCache(@NonNull CacheAdUnit cacheAdUnit, @NonNull ContextData contextData) {
+    sendBidRequest(Collections.singletonList(cacheAdUnit), contextData);
   }
 
   @VisibleForTesting
-  void getLiveBidForAdUnit(@NonNull AdUnit adUnit, @NonNull BidListener bidListener) {
+  void getLiveBidForAdUnit(
+      @NonNull AdUnit adUnit,
+      @NonNull ContextData contextData,
+      @NonNull BidListener bidListener
+  ) {
     if (killSwitchEngaged()) {
       bidListener.onNoBid();
       return;
@@ -233,28 +272,44 @@ public class BidManager implements ApplicationStoppedListener {
     }
 
     synchronized (cacheLock) {
+      consumeCachedBidIfExpired(cacheAdUnit);
+
       if (isSilencedFor(cacheAdUnit)) {
         consumeCachedBid(cacheAdUnit, bidListener);
       } else {
-        liveBidRequestSender.sendLiveBidRequest(cacheAdUnit, new LiveCdbCallListener(
-            bidListener,
-            bidLifecycleListener,
-            this,
-            cacheAdUnit
-        ));
+        liveBidRequestSender.sendLiveBidRequest(
+            cacheAdUnit,
+            contextData,
+            new LiveCdbCallListener(
+                bidListener,
+                bidLifecycleListener,
+                this,
+                cacheAdUnit,
+                consentData
+            )
+        );
       }
 
       metricSendingQueueConsumer.sendMetricBatch();
+      remoteLogSendingQueueConsumer.sendRemoteLogBatch();
     }
   }
 
-  private void sendBidRequest(List<CacheAdUnit> prefetchCacheAdUnits) {
+  private void sendBidRequest(
+      @NonNull List<CacheAdUnit> prefetchCacheAdUnits,
+      @NonNull ContextData contextData
+  ) {
     if (killSwitchEngaged()) {
       return;
     }
 
-    bidRequestSender.sendBidRequest(prefetchCacheAdUnits, new CacheOnlyCdbCallListener());
+    bidRequestSender.sendBidRequest(
+        prefetchCacheAdUnits,
+        contextData,
+        new CacheOnlyCdbCallListener()
+    );
     metricSendingQueueConsumer.sendMetricBatch();
+    remoteLogSendingQueueConsumer.sendRemoteLogBatch();
   }
 
   void setCacheAdUnits(@NonNull List<CdbResponseSlot> slots) {
@@ -282,17 +337,13 @@ public class BidManager implements ApplicationStoppedListener {
   @Nullable
   @VisibleForTesting
   CacheAdUnit mapToCacheAdUnit(@Nullable AdUnit adUnit) {
-    CacheAdUnit cacheAdUnit = adUnitMapper.map(adUnit);
-    if (cacheAdUnit == null) {
-      Log.e(TAG, "Valid AdUnit is required.");
-      return null;
-    }
-    return cacheAdUnit;
+    return adUnitMapper.map(adUnit);
   }
 
   void setTimeToNextCall(int seconds) {
     if (seconds > 0) {
-      this.cdbTimeToNextCall.set(clock.getCurrentTimeInMillis() + seconds * 1000);
+      logger.log(BiddingLogMessage.onGlobalSilentModeEnabled(seconds));
+      cdbTimeToNextCall.set(clock.getCurrentTimeInMillis() + seconds * 1000);
     }
   }
 
@@ -331,7 +382,7 @@ public class BidManager implements ApplicationStoppedListener {
       List<List<CacheAdUnit>> requestedAdUnitsChunks = adUnitMapper.mapToChunks(adUnits);
 
       for (List<CacheAdUnit> requestedAdUnits : requestedAdUnitsChunks) {
-        sendBidRequest(requestedAdUnits);
+        sendBidRequest(requestedAdUnits, new ContextData());
       }
     }
   }
@@ -350,7 +401,7 @@ public class BidManager implements ApplicationStoppedListener {
   private class CacheOnlyCdbCallListener extends CdbCallListener {
 
     public CacheOnlyCdbCallListener() {
-      super(bidLifecycleListener, BidManager.this);
+      super(bidLifecycleListener, BidManager.this, consentData);
     }
 
     @Override

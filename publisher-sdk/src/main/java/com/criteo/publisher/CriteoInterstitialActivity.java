@@ -16,6 +16,7 @@
 
 package com.criteo.publisher;
 
+import static com.criteo.publisher.ErrorLogMessage.onUncaughtErrorAtPublicApi;
 import static com.criteo.publisher.interstitial.InterstitialActivityHelper.CALLING_ACTIVITY;
 import static com.criteo.publisher.interstitial.InterstitialActivityHelper.RESULT_RECEIVER;
 import static com.criteo.publisher.interstitial.InterstitialActivityHelper.WEB_VIEW_DATA;
@@ -28,14 +29,14 @@ import android.app.Activity;
 import android.content.ComponentName;
 import android.os.Bundle;
 import android.os.ResultReceiver;
-import android.view.View;
-import android.view.View.OnClickListener;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
-import android.widget.ImageButton;
 import androidx.annotation.VisibleForTesting;
 import com.criteo.publisher.adview.AdWebViewClient;
+import com.criteo.publisher.adview.MraidOrientation;
+import com.criteo.publisher.adview.MraidOrientationKt;
 import com.criteo.publisher.adview.RedirectionListener;
+import com.criteo.publisher.interstitial.InterstitialAdWebView;
 import com.criteo.publisher.logging.Logger;
 import com.criteo.publisher.logging.LoggerFactory;
 import java.lang.ref.WeakReference;
@@ -44,7 +45,7 @@ public class CriteoInterstitialActivity extends Activity {
 
   private final Logger logger = LoggerFactory.getLogger(getClass());
 
-  private WebView webView;
+  private InterstitialAdWebView webView;
   private ResultReceiver resultReceiver;
   private FrameLayout adLayout;
   private ComponentName callingActivityName;
@@ -55,7 +56,7 @@ public class CriteoInterstitialActivity extends Activity {
       super.onCreate(savedInstanceState);
       doOnCreate();
     } catch (Throwable t) {
-      logger.error("Error while creating interstitial activity.", t);
+      logger.log(onUncaughtErrorAtPublicApi(t));
       finish();
     }
   }
@@ -70,10 +71,10 @@ public class CriteoInterstitialActivity extends Activity {
       is created via the XML file. In order to avoid leaking the Activity context, a workaround
       consists in creating the WebView by hand by passing the Application context instead.
      */
-    webView = new WebView(getApplicationContext());
+    webView = new InterstitialAdWebView(getApplicationContext());
     adLayout.addView(webView, 0);
 
-    ImageButton closeButton = findViewById(R.id.closeButton);
+    CloseButton closeButton = findViewById(R.id.closeButton);
 
     Bundle bundle = getIntent().getExtras();
     if (bundle != null && bundle.getString(WEB_VIEW_DATA) != null) {
@@ -85,15 +86,22 @@ public class CriteoInterstitialActivity extends Activity {
       displayWebView(webViewData);
     }
 
-    closeButton.setOnClickListener(new OnClickListener() {
-      @Override
-      public void onClick(View v) {
-        close();
-      }
+    closeButton.setOnClickListener(v -> close(true));
+    webView.setOnCloseRequestedListener(() -> {
+      close(false);
+      return null;
+    });
+    webView.setOnOrientationRequestedListener((allowOrientationChange, forceOrientation) -> {
+      setRequestedOrientation(allowOrientationChange, forceOrientation);
+      return null;
     });
   }
 
-  private void close() {
+  private void close(boolean notifyClosed) {
+    if (webView != null && notifyClosed) {
+      webView.onClosed();
+    }
+
     Bundle bundle = new Bundle();
     bundle.putInt(INTERSTITIAL_ACTION, ACTION_CLOSED);
     resultReceiver.send(RESULT_CODE_SUCCESSFUL, bundle);
@@ -111,14 +119,14 @@ public class CriteoInterstitialActivity extends Activity {
   protected void onDestroy() {
     super.onDestroy();
     adLayout.removeAllViews();
-    webView.setWebViewClient(null);
     webView.destroy();
     webView = null;
   }
 
   private void displayWebView(String webViewData) {
-    webView.loadDataWithBaseURL("https://criteo.com", webViewData, "text/html", "UTF-8",
-        "about:blank");
+    webView.loadDataWithBaseURL("https://www.criteo.com", webViewData, "text/html", "UTF-8",
+        ""
+    );
   }
 
   private void prepareWebView() {
@@ -136,9 +144,16 @@ public class CriteoInterstitialActivity extends Activity {
     webView.setWebViewClient(adWebViewClient);
   }
 
+  private void setRequestedOrientation(
+      Boolean allowOrientationChange,
+      MraidOrientation forceOrientation
+  ) {
+    MraidOrientationKt.setRequestedOrientation(this, allowOrientationChange, forceOrientation);
+  }
+
   @Override
   public void onBackPressed() {
-    close();
+    close(true);
   }
 
   @VisibleForTesting
@@ -163,13 +178,16 @@ public class CriteoInterstitialActivity extends Activity {
     }
 
     @Override
+    public void onRedirectionFailed() {
+      //no-op
+    }
+
+    @Override
     public void onUserBackFromAd() {
       CriteoInterstitialActivity criteoInterstitialActivity = activityRef.get();
       if (criteoInterstitialActivity != null) {
-        criteoInterstitialActivity.close();
+        criteoInterstitialActivity.close(true);
       }
     }
   }
 }
-
-

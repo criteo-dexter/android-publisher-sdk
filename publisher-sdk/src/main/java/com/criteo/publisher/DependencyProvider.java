@@ -20,11 +20,9 @@ import static java.util.Arrays.asList;
 
 import android.app.Application;
 import android.content.Context;
-import android.content.SharedPreferences;
-import android.os.Build.VERSION_CODES;
+import android.webkit.WebView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
 import com.criteo.publisher.AppEvents.AppEvents;
 import com.criteo.publisher.activity.TopActivityFinder;
 import com.criteo.publisher.advancednative.AdChoiceOverlay;
@@ -38,7 +36,14 @@ import com.criteo.publisher.advancednative.NativeAdMapper;
 import com.criteo.publisher.advancednative.RendererHelper;
 import com.criteo.publisher.advancednative.VisibilityChecker;
 import com.criteo.publisher.advancednative.VisibilityTracker;
+import com.criteo.publisher.adview.AdWebView;
+import com.criteo.publisher.adview.DummyMraidController;
+import com.criteo.publisher.adview.MraidController;
+import com.criteo.publisher.adview.MraidMessageHandler;
+import com.criteo.publisher.adview.MraidInteractor;
+import com.criteo.publisher.adview.MraidPlacementType;
 import com.criteo.publisher.adview.Redirection;
+import com.criteo.publisher.adview.MraidExpandBannerMediator;
 import com.criteo.publisher.bid.BidLifecycleListener;
 import com.criteo.publisher.bid.CompositeBidLifecycleListener;
 import com.criteo.publisher.bid.LoggingBidLifecycleListener;
@@ -48,50 +53,79 @@ import com.criteo.publisher.concurrent.AsyncResources;
 import com.criteo.publisher.concurrent.NoOpAsyncResources;
 import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
 import com.criteo.publisher.concurrent.ThreadPoolExecutorFactory;
+import com.criteo.publisher.context.ConnectionTypeFetcher;
+import com.criteo.publisher.context.ContextProvider;
+import com.criteo.publisher.context.UserDataHolder;
+import com.criteo.publisher.csm.ConcurrentSendingQueue;
 import com.criteo.publisher.csm.CsmBidLifecycleListener;
-import com.criteo.publisher.csm.MetricObjectQueueFactory;
-import com.criteo.publisher.csm.MetricParser;
 import com.criteo.publisher.csm.MetricRepository;
 import com.criteo.publisher.csm.MetricRepositoryFactory;
 import com.criteo.publisher.csm.MetricSendingQueue;
+import com.criteo.publisher.csm.MetricSendingQueue.AdapterMetricSendingQueue;
+import com.criteo.publisher.csm.MetricSendingQueueConfiguration;
 import com.criteo.publisher.csm.MetricSendingQueueConsumer;
-import com.criteo.publisher.csm.MetricSendingQueueFactory;
 import com.criteo.publisher.csm.MetricSendingQueueProducer;
+import com.criteo.publisher.csm.ObjectQueueFactory;
+import com.criteo.publisher.csm.SendingQueueConfiguration;
+import com.criteo.publisher.csm.SendingQueueFactory;
+import com.criteo.publisher.dependency.LazyDependency;
 import com.criteo.publisher.headerbidding.DfpHeaderBidding;
 import com.criteo.publisher.headerbidding.HeaderBidding;
-import com.criteo.publisher.headerbidding.MoPubHeaderBidding;
 import com.criteo.publisher.headerbidding.OtherAdServersHeaderBidding;
 import com.criteo.publisher.integration.IntegrationDetector;
 import com.criteo.publisher.integration.IntegrationRegistry;
+import com.criteo.publisher.interstitial.CriteoInterstitialMraidController;
 import com.criteo.publisher.interstitial.InterstitialActivityHelper;
+import com.criteo.publisher.interstitial.InterstitialAdWebView;
+import com.criteo.publisher.logging.ConsoleHandler;
 import com.criteo.publisher.logging.LoggerFactory;
+import com.criteo.publisher.logging.PublisherCodeRemover;
+import com.criteo.publisher.logging.RemoteHandler;
+import com.criteo.publisher.logging.RemoteLogRecords.RemoteLogLevel;
+import com.criteo.publisher.logging.RemoteLogRecordsFactory;
+import com.criteo.publisher.logging.RemoteLogSendingQueue;
+import com.criteo.publisher.logging.RemoteLogSendingQueue.AdapterRemoteLogSendingQueue;
+import com.criteo.publisher.logging.RemoteLogSendingQueueConfiguration;
+import com.criteo.publisher.logging.RemoteLogSendingQueueConsumer;
 import com.criteo.publisher.model.AdUnitMapper;
 import com.criteo.publisher.model.CdbRequestFactory;
 import com.criteo.publisher.model.Config;
 import com.criteo.publisher.model.DeviceInfo;
-import com.criteo.publisher.model.Publisher;
 import com.criteo.publisher.model.RemoteConfigRequestFactory;
 import com.criteo.publisher.network.BidRequestSender;
 import com.criteo.publisher.network.LiveBidRequestSender;
 import com.criteo.publisher.network.PubSdkApi;
+import com.criteo.publisher.privacy.ConsentData;
 import com.criteo.publisher.privacy.UserPrivacyUtil;
+import com.criteo.publisher.privacy.gdpr.GdprDataFetcher;
+import com.criteo.publisher.privacy.gdpr.TcfStrategyResolver;
 import com.criteo.publisher.util.AdvertisingInfo;
+import com.criteo.publisher.util.AdvertisingInfo.SafeAdvertisingIdClient;
 import com.criteo.publisher.util.AndroidUtil;
+import com.criteo.publisher.util.AppLifecycleUtil;
 import com.criteo.publisher.util.BuildConfigWrapper;
-import com.criteo.publisher.util.CustomAdapterFactory;
 import com.criteo.publisher.util.DeviceUtil;
+import com.criteo.publisher.util.ExternalVideoPlayer;
 import com.criteo.publisher.util.JsonSerializer;
 import com.criteo.publisher.util.MapUtilKt;
+import com.criteo.publisher.util.SafeSharedPreferences;
+import com.criteo.publisher.util.SharedPreferencesFactory;
 import com.criteo.publisher.util.TextUtils;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
+import com.criteo.publisher.util.ViewPositionTracker;
+import com.criteo.publisher.util.jsonadapter.BooleanJsonAdapter;
+import com.criteo.publisher.util.jsonadapter.URIAdapter;
+import com.criteo.publisher.util.jsonadapter.URLAdapter;
+import com.squareup.moshi.Moshi;
+import com.squareup.moshi.adapters.EnumJsonAdapter;
 import com.squareup.picasso.Picasso;
+import java.net.URI;
+import java.net.URL;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ThreadPoolExecutor;
 import kotlin.jvm.functions.Function0;
 
 /**
@@ -101,12 +135,13 @@ public class DependencyProvider {
 
   protected static DependencyProvider instance;
 
-  private final ConcurrentMap<Class<?>, Object> services = new ConcurrentHashMap<>();
+  protected final ConcurrentMap<Class<?>, Object> services = new ConcurrentHashMap<>();
 
   private Application application;
   private String criteoPublisherId;
+  private String inventoryGroupId;
 
-  private DependencyProvider() {
+  protected DependencyProvider() {
   }
 
   @NonNull
@@ -133,6 +168,10 @@ public class DependencyProvider {
   public void setCriteoPublisherId(@NonNull String criteoPublisherId) {
     this.criteoPublisherId = criteoPublisherId;
     checkCriteoPublisherIdIsSet();
+  }
+
+  public void setInventoryGroupId(@Nullable String inventoryGroupId) {
+    this.inventoryGroupId = inventoryGroupId;
   }
 
   boolean isApplicationSet() {
@@ -173,487 +212,334 @@ public class DependencyProvider {
     return criteoPublisherId;
   }
 
+  @Nullable
+  public String provideInventoryGroupId() {
+    return inventoryGroupId;
+  }
+
   @NonNull
   public PubSdkApi providePubSdkApi() {
-    return getOrCreate(PubSdkApi.class, new Factory<PubSdkApi>() {
-      @NonNull
-      @Override
-      public PubSdkApi create() {
-        return new PubSdkApi(
-            provideBuildConfigWrapper(),
-            provideJsonSerializer()
-        );
-      }
-    });
+    return getOrCreate(PubSdkApi.class, () -> new PubSdkApi(
+        provideBuildConfigWrapper(),
+        provideJsonSerializer()
+    ));
   }
 
   @NonNull
   public AdvertisingInfo provideAdvertisingInfo() {
-    return getOrCreate(AdvertisingInfo.class, new Factory<AdvertisingInfo>() {
-      @NonNull
-      @Override
-      public AdvertisingInfo create() {
-        return new AdvertisingInfo(provideContext());
-      }
-    });
+    return getOrCreate(AdvertisingInfo.class, () -> new AdvertisingInfo(
+        provideContext(),
+        provideThreadPoolExecutor(),
+        provideSafeAdvertisingIdClient()
+    ));
+  }
+
+  @NonNull
+  public SafeAdvertisingIdClient provideSafeAdvertisingIdClient() {
+    return getOrCreate(SafeAdvertisingIdClient.class, SafeAdvertisingIdClient::new);
   }
 
   @NonNull
   public AndroidUtil provideAndroidUtil() {
-    return getOrCreate(AndroidUtil.class, new Factory<AndroidUtil>() {
-      @NonNull
-      @Override
-      public AndroidUtil create() {
-        return new AndroidUtil(provideContext(), provideDeviceUtil());
-      }
-    });
+    return getOrCreate(AndroidUtil.class, () -> new AndroidUtil(
+        provideContext(),
+        provideDeviceUtil()
+    ));
   }
 
   @NonNull
   public DeviceUtil provideDeviceUtil() {
-    return getOrCreate(DeviceUtil.class, new Factory<DeviceUtil>() {
-      @NonNull
-      @Override
-      public DeviceUtil create() {
-        return new DeviceUtil(provideContext());
-      }
-    });
+    return getOrCreate(DeviceUtil.class, () -> new DeviceUtil(
+        provideContext()
+    ));
   }
 
   @NonNull
   public Executor provideThreadPoolExecutor() {
-    return getOrCreate(ThreadPoolExecutor.class, new ThreadPoolExecutorFactory());
+    return getOrCreate(Executor.class, new ThreadPoolExecutorFactory());
   }
 
   @NonNull
   public ScheduledExecutorService provideScheduledExecutorService() {
-    return getOrCreate(ScheduledExecutorService.class, new Factory<ScheduledExecutorService>() {
-      @NonNull
-      @Override
-      public ScheduledExecutorService create() {
-        return Executors.newSingleThreadScheduledExecutor();
-      }
-    });
+    return getOrCreate(ScheduledExecutorService.class, Executors::newSingleThreadScheduledExecutor);
   }
 
   @NonNull
   public RunOnUiThreadExecutor provideRunOnUiThreadExecutor() {
-    return getOrCreate(RunOnUiThreadExecutor.class, new Factory<RunOnUiThreadExecutor>() {
-      @NonNull
-      @Override
-      public RunOnUiThreadExecutor create() {
-        return new RunOnUiThreadExecutor();
-      }
-    });
+    return getOrCreate(RunOnUiThreadExecutor.class, RunOnUiThreadExecutor::new);
   }
 
   @NonNull
   public Config provideConfig() {
-    return getOrCreate(Config.class, new Factory<Config>() {
-      @NonNull
-      @Override
-      public Config create() {
-        return new Config(
-            provideSharedPreferences(),
-            provideJsonSerializer()
-        );
-      }
-    });
+    return getOrCreate(Config.class, () -> new Config(
+        provideSharedPreferencesFactory().getInternal(),
+        provideJsonSerializer()
+    ));
   }
 
   @NonNull
   public Clock provideClock() {
-    return getOrCreate(Clock.class, new Factory<Clock>() {
-      @NonNull
-      @Override
-      public Clock create() {
-        return new EpochClock();
-      }
-    });
+    return getOrCreate(Clock.class, EpochClock::new);
   }
 
   @NonNull
   public UserPrivacyUtil provideUserPrivacyUtil() {
-    return getOrCreate(UserPrivacyUtil.class, new Factory<UserPrivacyUtil>() {
-      @NonNull
-      @Override
-      public UserPrivacyUtil create() {
-        return new UserPrivacyUtil(provideContext());
-      }
-    });
+    return getOrCreate(UserPrivacyUtil.class, () -> new UserPrivacyUtil(
+        provideSharedPreferencesFactory().getApplication(),
+        new GdprDataFetcher(new TcfStrategyResolver(new SafeSharedPreferences(
+            provideSharedPreferencesFactory().getApplication())))
+    ));
   }
 
   @NonNull
   public BidManager provideBidManager() {
-    return getOrCreate(BidManager.class, new Factory<BidManager>() {
-      @NonNull
-      @Override
-      public BidManager create() {
-        return new BidManager(
-            new SdkCache(provideDeviceUtil()),
-            provideConfig(),
-            provideClock(),
-            provideAdUnitMapper(),
-            provideBidRequestSender(),
-            provideLiveBidRequestSender(),
-            provideBidLifecycleListener(),
-            provideMetricSendingQueueConsumer()
-        );
-      }
-    });
+    return getOrCreate(BidManager.class, () -> new BidManager(
+        provideSdkCache(),
+        provideConfig(),
+        provideClock(),
+        provideAdUnitMapper(),
+        provideBidRequestSender(),
+        provideLiveBidRequestSender(),
+        provideBidLifecycleListener(),
+        provideMetricSendingQueueConsumer(),
+        provideRemoteLogSendingQueueConsumer(),
+        provideConsentData()
+    ));
+  }
+
+  @NonNull
+  public SdkCache provideSdkCache() {
+    return getOrCreate(SdkCache.class, () -> new SdkCache(
+        provideDeviceUtil()
+    ));
   }
 
   @NonNull
   public DeviceInfo provideDeviceInfo() {
-    return getOrCreate(DeviceInfo.class, new Factory<DeviceInfo>() {
-      @NonNull
-      @Override
-      public DeviceInfo create() {
-        return new DeviceInfo(
-            provideContext(),
-            provideRunOnUiThreadExecutor()
-        );
-      }
-    });
+    return getOrCreate(DeviceInfo.class, () -> new DeviceInfo(
+        provideContext(),
+        provideThreadPoolExecutor()
+    ));
   }
 
   @NonNull
   public AdUnitMapper provideAdUnitMapper() {
-    return getOrCreate(AdUnitMapper.class, new Factory<AdUnitMapper>() {
-      @NonNull
-      @Override
-      public AdUnitMapper create() {
-        return new AdUnitMapper(
-            DependencyProvider.this.provideAndroidUtil(),
-            DependencyProvider.this.provideDeviceUtil()
-        );
-      }
-    });
+    return getOrCreate(AdUnitMapper.class, () -> new AdUnitMapper(
+        provideDeviceUtil(),
+        provideIntegrationRegistry()
+    ));
   }
 
   @NonNull
   public AppEvents provideAppEvents() {
-    return getOrCreate(AppEvents.class, new Factory<AppEvents>() {
-      @NonNull
-      @Override
-      public AppEvents create() {
-        return new AppEvents(
-            provideContext(),
-            provideAdvertisingInfo(),
-            provideClock(),
-            providePubSdkApi(),
-            provideUserPrivacyUtil(),
-            provideDeviceInfo()
-        );
-      }
-    });
+    return getOrCreate(AppEvents.class, () -> new AppEvents(
+        provideContext(),
+        provideAdvertisingInfo(),
+        provideClock(),
+        providePubSdkApi(),
+        provideUserPrivacyUtil(),
+        provideDeviceInfo(),
+        provideThreadPoolExecutor()
+    ));
   }
 
   @NonNull
-  public Publisher providePublisher() {
-    return getOrCreate(Publisher.class, new Factory<Publisher>() {
-      @NonNull
-      @Override
-      public Publisher create() {
-        return Publisher.create(provideContext(), provideCriteoPublisherId());
-      }
-    });
+  public AppLifecycleUtil provideAppLifecycleUtil() {
+    return getOrCreate(AppLifecycleUtil.class, () -> new AppLifecycleUtil(
+        provideAppEvents(),
+        provideBidManager()
+    ));
   }
 
   @NonNull
   public BuildConfigWrapper provideBuildConfigWrapper() {
-    return getOrCreate(BuildConfigWrapper.class, new Factory<BuildConfigWrapper>() {
-      @NonNull
-      @Override
-      public BuildConfigWrapper create() {
-        return new BuildConfigWrapper();
-      }
-    });
+    return getOrCreate(BuildConfigWrapper.class, BuildConfigWrapper::new);
   }
 
   @NonNull
   public CdbRequestFactory provideCdbRequestFactory() {
-    return getOrCreate(CdbRequestFactory.class, new Factory<CdbRequestFactory>() {
-      @NonNull
-      @Override
-      public CdbRequestFactory create() {
-        return new CdbRequestFactory(
-            providePublisher(),
-            provideDeviceInfo(),
-            provideAdvertisingInfo(),
-            provideUserPrivacyUtil(),
-            provideUniqueIdGenerator(),
-            provideBuildConfigWrapper(),
-            provideIntegrationRegistry()
-        );
-      }
-    });
+    return getOrCreate(CdbRequestFactory.class, () -> new CdbRequestFactory(
+        provideContext(),
+        provideCriteoPublisherId(),
+        provideInventoryGroupId(),
+        provideDeviceInfo(),
+        provideAdvertisingInfo(),
+        provideUserPrivacyUtil(),
+        provideUniqueIdGenerator(),
+        provideBuildConfigWrapper(),
+        provideIntegrationRegistry(),
+        provideContextProvider(),
+        provideUserDataHolder(),
+        provideConfig()
+    ));
   }
 
   @NonNull
   public UniqueIdGenerator provideUniqueIdGenerator() {
-    return getOrCreate(UniqueIdGenerator.class, new Factory<UniqueIdGenerator>() {
-      @NonNull
-      @Override
-      public UniqueIdGenerator create() {
-        return new UniqueIdGenerator(provideClock());
-      }
-    });
+    return getOrCreate(UniqueIdGenerator.class, () -> new UniqueIdGenerator(
+        provideClock()
+    ));
   }
 
   @NonNull
   public RemoteConfigRequestFactory provideRemoteConfigRequestFactory() {
-    return getOrCreate(RemoteConfigRequestFactory.class, new Factory<RemoteConfigRequestFactory>() {
-      @NonNull
-      @Override
-      public RemoteConfigRequestFactory create() {
-        return new RemoteConfigRequestFactory(
-            providePublisher(),
-            provideBuildConfigWrapper(),
-            provideIntegrationRegistry(),
-            provideAdvertisingInfo()
-        );
-      }
-    });
+    return getOrCreate(RemoteConfigRequestFactory.class, () -> new RemoteConfigRequestFactory(
+        provideContext(),
+        provideCriteoPublisherId(),
+        provideInventoryGroupId(),
+        provideBuildConfigWrapper(),
+        provideIntegrationRegistry()
+    ));
   }
 
   @NonNull
   public BidRequestSender provideBidRequestSender() {
-    return getOrCreate(BidRequestSender.class, new Factory<BidRequestSender>() {
-      @NonNull
-      @Override
-      public BidRequestSender create() {
-        return new BidRequestSender(
-            provideCdbRequestFactory(),
-            provideRemoteConfigRequestFactory(),
-            provideClock(),
-            providePubSdkApi(),
-            provideThreadPoolExecutor()
-        );
-      }
-    });
+    return getOrCreate(BidRequestSender.class, () -> new BidRequestSender(
+        provideCdbRequestFactory(),
+        provideRemoteConfigRequestFactory(),
+        provideClock(),
+        providePubSdkApi(),
+        provideThreadPoolExecutor()
+    ));
   }
 
   @NonNull
   public LiveBidRequestSender provideLiveBidRequestSender() {
-    return getOrCreate(LiveBidRequestSender.class, new Factory<LiveBidRequestSender>() {
-      @NonNull
-      @Override
-      public LiveBidRequestSender create() {
-        return new LiveBidRequestSender(
-            providePubSdkApi(),
-            provideCdbRequestFactory(),
-            provideClock(),
-            provideThreadPoolExecutor(),
-            provideScheduledExecutorService(),
-            provideConfig()
-        );
-      }
-    });
+    return getOrCreate(LiveBidRequestSender.class, () -> new LiveBidRequestSender(
+        providePubSdkApi(),
+        provideCdbRequestFactory(),
+        provideClock(),
+        provideThreadPoolExecutor(),
+        provideScheduledExecutorService(),
+        provideConfig()
+    ));
   }
 
   @NonNull
   public BidLifecycleListener provideBidLifecycleListener() {
-    return getOrCreate(BidLifecycleListener.class, new Factory<BidLifecycleListener>() {
-      @NonNull
-      @Override
-      public BidLifecycleListener create() {
-        CompositeBidLifecycleListener listener = new CompositeBidLifecycleListener();
-        listener.add(new LoggingBidLifecycleListener());
+    return getOrCreate(BidLifecycleListener.class, () -> {
+      CompositeBidLifecycleListener listener = new CompositeBidLifecycleListener();
+      listener.add(new LoggingBidLifecycleListener(provideRemoteLogSendingQueueConsumer()));
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) {
-          listener.add(new CsmBidLifecycleListener(
-              provideMetricRepository(),
-              new MetricSendingQueueProducer(provideMetricSendingQueue()),
-              provideClock(),
-              provideConfig(),
-              provideThreadPoolExecutor()
-          ));
-        }
+      listener.add(new CsmBidLifecycleListener(
+          provideMetricRepository(),
+          provideMetricSendingQueueProducer(),
+          provideClock(),
+          provideConfig(),
+          provideConsentData(),
+          provideThreadPoolExecutor()
+      ));
 
-        return listener;
-      }
+      return listener;
     });
   }
 
   @NonNull
   public NativeAdMapper provideNativeAdMapper() {
-    return getOrCreate(NativeAdMapper.class, new Factory<NativeAdMapper>() {
-      @NonNull
-      @Override
-      public NativeAdMapper create() {
-        return new NativeAdMapper(
-            provideVisibilityTracker(),
-            new ImpressionHelper(
-                providePubSdkApi(),
-                provideThreadPoolExecutor(),
-                provideRunOnUiThreadExecutor()
-            ),
-            provideClickDetection(),
-            new ClickHelper(
-                provideRedirection(),
-                provideTopActivityFinder(),
-                provideRunOnUiThreadExecutor()
-            ),
-            provideAdChoiceOverlay(),
-            provideRendererHelper()
-        );
-      }
-    });
+    return getOrCreate(NativeAdMapper.class, () -> new NativeAdMapper(
+        provideVisibilityTracker(),
+        new ImpressionHelper(
+            providePubSdkApi(),
+            provideThreadPoolExecutor(),
+            provideRunOnUiThreadExecutor()
+        ),
+        provideClickDetection(),
+        new ClickHelper(
+            provideRedirection(),
+            provideTopActivityFinder(),
+            provideRunOnUiThreadExecutor()
+        ),
+        provideAdChoiceOverlay(),
+        provideRendererHelper()
+    ));
   }
 
   @NonNull
   public VisibilityTracker provideVisibilityTracker() {
-    return getOrCreate(VisibilityTracker.class, new Factory<VisibilityTracker>() {
-      @NonNull
-      @Override
-      public VisibilityTracker create() {
-        return new VisibilityTracker(new VisibilityChecker());
-      }
-    });
+    return getOrCreate(VisibilityTracker.class, () -> new VisibilityTracker(
+        new VisibilityChecker(),
+        provideRunOnUiThreadExecutor()
+    ));
   }
 
   @NonNull
   public ClickDetection provideClickDetection() {
-    return getOrCreate(ClickDetection.class, new Factory<ClickDetection>() {
-      @NonNull
-      @Override
-      public ClickDetection create() {
-        return new ClickDetection();
-      }
-    });
+    return getOrCreate(ClickDetection.class, ClickDetection::new);
   }
 
   @NonNull
   public Redirection provideRedirection() {
-    return getOrCreate(Redirection.class, new Factory<Redirection>() {
-      @NonNull
-      @Override
-      public Redirection create() {
-        return new Redirection(provideContext());
-      }
-    });
+    return getOrCreate(Redirection.class, () -> new Redirection(
+        provideContext()
+    ));
   }
 
   @NonNull
   public AdChoiceOverlay provideAdChoiceOverlay() {
-    return getOrCreate(AdChoiceOverlay.class, new Factory<AdChoiceOverlay>() {
-      @NonNull
-      @Override
-      public AdChoiceOverlay create() {
-        return new AdChoiceOverlay(
-            provideBuildConfigWrapper(),
-            provideAndroidUtil()
-        );
-      }
-    });
+    return getOrCreate(AdChoiceOverlay.class, () -> new AdChoiceOverlay(
+        provideBuildConfigWrapper(),
+        provideDeviceUtil()
+    ));
   }
 
   @NonNull
   public Picasso providePicasso() {
-    return getOrCreate(Picasso.class, new Factory<Picasso>() {
-      @NonNull
-      @Override
-      public Picasso create() {
-        return new Picasso.Builder(provideContext()).build();
-      }
-    });
+    return getOrCreate(Picasso.class, () -> new Picasso.Builder(provideContext()).build());
   }
 
   @NonNull
   public ImageLoader provideDefaultImageLoader() {
-    return getOrCreate(ImageLoader.class, new Factory<ImageLoader>() {
-      @NonNull
-      @Override
-      public ImageLoader create() {
-        return new CriteoImageLoader(providePicasso(), provideAsyncResources());
-      }
-    });
+    return getOrCreate(ImageLoader.class, () -> new CriteoImageLoader(
+        providePicasso(),
+        provideAsyncResources()
+    ));
   }
 
   @NonNull
   public ImageLoaderHolder provideImageLoaderHolder() {
-    return getOrCreate(ImageLoaderHolder.class, new Factory<ImageLoaderHolder>() {
-      @NonNull
-      @Override
-      public ImageLoaderHolder create() {
-        return new ImageLoaderHolder(provideDefaultImageLoader());
-      }
-    });
+    return getOrCreate(
+        ImageLoaderHolder.class,
+        () -> new ImageLoaderHolder(provideDefaultImageLoader())
+    );
   }
 
   @NonNull
   public RendererHelper provideRendererHelper() {
-    return getOrCreate(RendererHelper.class, new Factory<RendererHelper>() {
-      @NonNull
-      @Override
-      public RendererHelper create() {
-        return new RendererHelper(
-            provideImageLoaderHolder(),
-            provideRunOnUiThreadExecutor()
-        );
-      }
-    });
+    return getOrCreate(RendererHelper.class, () -> new RendererHelper(
+        provideImageLoaderHolder(),
+        provideRunOnUiThreadExecutor()
+    ));
   }
 
   @NonNull
   public AsyncResources provideAsyncResources() {
-    return getOrCreate(AsyncResources.class, new Factory<AsyncResources>() {
-      @NonNull
-      @Override
-      public AsyncResources create() {
-        return new NoOpAsyncResources();
-      }
-    });
+    return getOrCreate(AsyncResources.class, NoOpAsyncResources::new);
   }
 
   @NonNull
-  public SharedPreferences provideSharedPreferences() {
-    return getOrCreate(SharedPreferences.class, new Factory<SharedPreferences>() {
-      @NonNull
-      @Override
-      public SharedPreferences create() {
-        return provideContext().getSharedPreferences(
-            BuildConfig.pubSdkSharedPreferences,
-            Context.MODE_PRIVATE
-        );
-      }
-    });
+  public SharedPreferencesFactory provideSharedPreferencesFactory() {
+    return getOrCreate(
+        SharedPreferencesFactory.class,
+        () -> new SharedPreferencesFactory(provideContext())
+    );
   }
 
   @NonNull
   public IntegrationRegistry provideIntegrationRegistry() {
-    return getOrCreate(IntegrationRegistry.class, new Factory<IntegrationRegistry>() {
-      @NonNull
-      @Override
-      public IntegrationRegistry create() {
-        return new IntegrationRegistry(
-            provideSharedPreferences(),
-            provideIntegrationDetector()
-        );
-      }
-    });
+    return getOrCreate(IntegrationRegistry.class, () -> new IntegrationRegistry(
+        provideSharedPreferencesFactory().getInternal(),
+        provideIntegrationDetector()
+    ));
   }
 
   @NonNull
   public IntegrationDetector provideIntegrationDetector() {
-    return getOrCreate(IntegrationDetector.class, new Factory<IntegrationDetector>() {
-      @NonNull
-      @Override
-      public IntegrationDetector create() {
-        return new IntegrationDetector();
-      }
-    });
+    return getOrCreate(IntegrationDetector.class, IntegrationDetector::new);
   }
 
   @SuppressWarnings("unchecked")
-  private <T> T getOrCreate(Class<T> klass, Factory<T> factory) {
-    Object service = MapUtilKt.getOrCompute(services, klass, new Function0<T>() {
-      @Override
-      public T invoke() {
-        return factory.create();
-      }
-    });
+  protected <T> T getOrCreate(Class<T> klass, Factory<? extends T> factory) {
+    Object service = MapUtilKt.getOrCompute(services, klass, (Function0<T>) factory::create);
 
     // safe because the services map is only filled there by typed factory
     return (T) service;
@@ -661,157 +547,297 @@ public class DependencyProvider {
 
   @NonNull
   public ConsumableBidLoader provideConsumableBidLoader() {
-    return getOrCreate(ConsumableBidLoader.class, new Factory<ConsumableBidLoader>() {
-      @NonNull
-      @Override
-      public ConsumableBidLoader create() {
-        return new ConsumableBidLoader(
-            provideBidManager(),
-            provideClock()
-        );
-      }
-    });
+    return getOrCreate(ConsumableBidLoader.class, () -> new ConsumableBidLoader(
+        provideBidManager(),
+        provideClock(),
+        provideRunOnUiThreadExecutor()
+    ));
   }
 
   @NonNull
   public HeaderBidding provideHeaderBidding() {
-    return getOrCreate(HeaderBidding.class, new Factory<HeaderBidding>() {
-      @NonNull
-      @Override
-      public HeaderBidding create() {
-        return new HeaderBidding(
-            asList(
-                new MoPubHeaderBidding(),
-                new DfpHeaderBidding(provideAndroidUtil(), provideDeviceUtil()),
-                new OtherAdServersHeaderBidding()
-            ),
-            provideIntegrationRegistry()
-        );
-      }
-    });
+    return getOrCreate(HeaderBidding.class, () -> new HeaderBidding(
+        asList(
+            new DfpHeaderBidding(provideAndroidUtil(), provideDeviceUtil()),
+            new OtherAdServersHeaderBidding()
+        ),
+        provideIntegrationRegistry()
+    ));
   }
 
   @NonNull
   public InterstitialActivityHelper provideInterstitialActivityHelper() {
-    return getOrCreate(InterstitialActivityHelper.class, new Factory<InterstitialActivityHelper>() {
-      @NonNull
-      @Override
-      public InterstitialActivityHelper create() {
-        return new InterstitialActivityHelper(
-            provideContext(),
-            provideTopActivityFinder()
-        );
-      }
-    });
+    return getOrCreate(InterstitialActivityHelper.class, () -> new InterstitialActivityHelper(
+        provideContext(),
+        provideTopActivityFinder()
+    ));
   }
 
   @NonNull
   public TopActivityFinder provideTopActivityFinder() {
-    return getOrCreate(TopActivityFinder.class, new Factory<TopActivityFinder>() {
-      @NonNull
-      @Override
-      public TopActivityFinder create() {
-        return new TopActivityFinder(provideContext());
-      }
-    });
+    return getOrCreate(TopActivityFinder.class, () -> new TopActivityFinder(
+        provideContext()
+    ));
   }
 
   @NonNull
   public MetricSendingQueueConsumer provideMetricSendingQueueConsumer() {
-    return getOrCreate(MetricSendingQueueConsumer.class, new Factory<MetricSendingQueueConsumer>() {
-      @NonNull
-      @Override
-      public MetricSendingQueueConsumer create() {
-        return new MetricSendingQueueConsumer(
-            provideMetricSendingQueue(),
-            providePubSdkApi(),
-            provideBuildConfigWrapper(),
-            provideConfig(),
-            provideThreadPoolExecutor()
-        );
-      }
-    });
+    return getOrCreate(MetricSendingQueueConsumer.class, () -> new MetricSendingQueueConsumer(
+        provideMetricSendingQueue(),
+        providePubSdkApi(),
+        provideBuildConfigWrapper(),
+        provideConfig(),
+        provideThreadPoolExecutor()
+    ));
   }
 
   @NonNull
-  public MetricObjectQueueFactory provideObjectQueueFactory() {
-    return getOrCreate(MetricObjectQueueFactory.class, new Factory<MetricObjectQueueFactory>() {
-      @NonNull
-      @Override
-      public MetricObjectQueueFactory create() {
-        return new MetricObjectQueueFactory(
-            provideContext(),
-            provideMetricParser(),
-            provideBuildConfigWrapper()
-        );
-      }
-    });
+  public MetricSendingQueueProducer provideMetricSendingQueueProducer() {
+    return getOrCreate(MetricSendingQueueProducer.class, () -> new MetricSendingQueueProducer(
+        provideMetricSendingQueue()
+    ));
   }
+
 
   @NonNull
   public MetricSendingQueue provideMetricSendingQueue() {
-    return getOrCreate(MetricSendingQueue.class, new MetricSendingQueueFactory(
-        provideObjectQueueFactory(),
-        provideBuildConfigWrapper()
+    return getOrCreate(MetricSendingQueue.class, () -> new AdapterMetricSendingQueue(
+        provideSendingQueue(provideMetricSendingQueueConfiguration())
     ));
   }
 
+  private <T> ConcurrentSendingQueue<T> provideSendingQueue(SendingQueueConfiguration<T> configuration) {
+    return new SendingQueueFactory<>(
+        new ObjectQueueFactory<>(
+            provideContext(),
+            provideJsonSerializer(),
+            configuration
+        ),
+        configuration
+    ).create();
+  }
+
   @NonNull
-  @RequiresApi(api = VERSION_CODES.JELLY_BEAN_MR1)
+  public MetricSendingQueueConfiguration provideMetricSendingQueueConfiguration() {
+    return getOrCreate(
+        MetricSendingQueueConfiguration.class,
+        () -> new MetricSendingQueueConfiguration(
+            provideBuildConfigWrapper()
+        )
+    );
+  }
+
+  @NonNull
   public MetricRepository provideMetricRepository() {
     return getOrCreate(MetricRepository.class, new MetricRepositoryFactory(
         provideContext(),
-        provideMetricParser(),
+        provideJsonSerializer(),
         provideBuildConfigWrapper()
     ));
-  }
-
-  @NonNull
-  public MetricParser provideMetricParser() {
-    return getOrCreate(MetricParser.class, new Factory<MetricParser>() {
-      @NonNull
-      @Override
-      public MetricParser create() {
-        return new MetricParser(
-            provideJsonSerializer()
-        );
-      }
-    });
   }
 
   @NonNull
   public JsonSerializer provideJsonSerializer() {
-    return getOrCreate(JsonSerializer.class, new Factory<JsonSerializer>() {
-      @NonNull
-      @Override
-      public JsonSerializer create() {
-        return new JsonSerializer(provideGson());
-      }
-    });
+    return getOrCreate(JsonSerializer.class, () -> new JsonSerializer(
+        provideMoshi()
+    ));
   }
 
   @NonNull
-  public Gson provideGson() {
-    return getOrCreate(Gson.class, new Factory<Gson>() {
-      @NonNull
-      @Override
-      public Gson create() {
-        return new GsonBuilder()
-            .registerTypeAdapterFactory(CustomAdapterFactory.create())
-            .create();
-      }
-    });
+  public Moshi provideMoshi() {
+    return getOrCreate(Moshi.class, () -> new Moshi.Builder()
+        .add(
+            RemoteLogLevel.class,
+            EnumJsonAdapter.create(RemoteLogLevel.class).withUnknownFallback(null).nullSafe()
+        )
+        // lenient() to properly parse malformed json url
+        .add(URI.class, new URIAdapter().lenient())
+        .add(URL.class, new URLAdapter().lenient())
+        // TODO: there are some tests that are parsing from Boolean value and some that are parsing from String value
+        //  investigate if we can remove this adapters and always parse value from Boolean
+        .add(Boolean.class, new BooleanJsonAdapter().nullSafe())
+        .add(boolean.class, new BooleanJsonAdapter().nullSafe())
+        .build());
   }
 
   @NonNull
   public LoggerFactory provideLoggerFactory() {
-    return getOrCreate(LoggerFactory.class, new Factory<LoggerFactory>() {
-      @NonNull
-      @Override
-      public LoggerFactory create() {
-        return new LoggerFactory(provideBuildConfigWrapper());
-      }
-    });
+    return getOrCreate(LoggerFactory.class, () -> new LoggerFactory(Arrays.asList(
+        new LazyDependency<>("ConsoleHandler", this::provideConsoleHandler),
+        new LazyDependency<>("RemoteHandler", this::provideRemoteHandler)
+    )));
+  }
+
+  @NonNull
+  public ConsoleHandler provideConsoleHandler() {
+    return getOrCreate(ConsoleHandler.class, () -> new ConsoleHandler(
+        provideBuildConfigWrapper()
+    ));
+  }
+
+  @NonNull
+  public ContextProvider provideContextProvider() {
+    return getOrCreate(ContextProvider.class, () -> new ContextProvider(
+        provideContext(),
+        provideConnectionTypeFetcher(),
+        provideAndroidUtil(),
+        provideSession()
+    ));
+  }
+
+  @NonNull
+  public ConnectionTypeFetcher provideConnectionTypeFetcher() {
+    return getOrCreate(ConnectionTypeFetcher.class, () -> new ConnectionTypeFetcher(
+        provideContext()
+    ));
+  }
+
+  @NonNull
+  public Session provideSession() {
+    return getOrCreate(Session.class, () -> new Session(
+        provideClock(),
+        provideUniqueIdGenerator()
+    ));
+  }
+
+  @NonNull
+  public UserDataHolder provideUserDataHolder() {
+    return getOrCreate(UserDataHolder.class, UserDataHolder::new);
+  }
+
+  @NonNull
+  public RemoteLogSendingQueue provideRemoteLogSendingQueue() {
+    return getOrCreate(RemoteLogSendingQueue.class, () -> new AdapterRemoteLogSendingQueue(
+        provideSendingQueue(provideRemoteLogSendingQueueConfiguration())
+    ));
+  }
+
+  @NonNull
+  public RemoteLogSendingQueueConfiguration provideRemoteLogSendingQueueConfiguration() {
+    return getOrCreate(
+        RemoteLogSendingQueueConfiguration.class,
+        () -> new RemoteLogSendingQueueConfiguration(
+            provideBuildConfigWrapper()
+        )
+    );
+  }
+
+  @NonNull
+  public RemoteLogRecordsFactory provideRemoteLogRecordsFactory() {
+    return getOrCreate(RemoteLogRecordsFactory.class, () -> new RemoteLogRecordsFactory(
+        provideBuildConfigWrapper(),
+        provideContext(),
+        provideAdvertisingInfo(),
+        provideSession(),
+        provideIntegrationRegistry(),
+        provideClock(),
+        providePublisherCodeRemover()
+    ));
+  }
+
+  @NonNull
+  public PublisherCodeRemover providePublisherCodeRemover() {
+    return getOrCreate(PublisherCodeRemover.class, PublisherCodeRemover::new);
+  }
+
+  @NonNull
+  public RemoteHandler provideRemoteHandler() {
+    return getOrCreate(RemoteHandler.class, () -> new RemoteHandler(
+        provideRemoteLogRecordsFactory(),
+        provideRemoteLogSendingQueue(),
+        provideConfig(),
+        provideThreadPoolExecutor(),
+        provideConsentData()
+    ));
+  }
+
+  @NonNull
+  public RemoteLogSendingQueueConsumer provideRemoteLogSendingQueueConsumer() {
+    return getOrCreate(RemoteLogSendingQueueConsumer.class, () -> new RemoteLogSendingQueueConsumer(
+        provideRemoteLogSendingQueue(),
+        providePubSdkApi(),
+        provideBuildConfigWrapper(),
+        provideAdvertisingInfo(),
+        provideThreadPoolExecutor()
+    ));
+  }
+
+  @NonNull
+  public ConsentData provideConsentData() {
+    return getOrCreate(
+        ConsentData.class,
+        () -> new ConsentData(provideSharedPreferencesFactory().getInternal())
+    );
+  }
+
+  @NonNull
+  public MraidInteractor provideMraidInteractor(WebView webView) {
+    return new MraidInteractor(webView);
+  }
+
+  @NonNull
+  public MraidMessageHandler provideMraidMessageHandler() {
+    return new MraidMessageHandler();
+  }
+
+  @NonNull
+  public MraidController provideMraidController(
+      MraidPlacementType placementType,
+      AdWebView adWebView
+  ) {
+    if (!provideConfig().isMraidEnabled() && !provideConfig().isMraid2Enabled()) {
+      return new DummyMraidController();
+    }
+
+    if (placementType == MraidPlacementType.INLINE) {
+      return new CriteoBannerMraidController(
+          (CriteoBannerAdWebView) adWebView,
+          provideRunOnUiThreadExecutor(),
+          provideVisibilityTracker(),
+          provideMraidInteractor(adWebView),
+          provideMraidMessageHandler(),
+          provideDeviceUtil(),
+          provideViewPositionTracker(),
+          provideExternalVideoPlayer()
+      );
+    } else {
+      return new CriteoInterstitialMraidController(
+          (InterstitialAdWebView) adWebView,
+          provideRunOnUiThreadExecutor(),
+          provideVisibilityTracker(),
+          provideMraidInteractor(adWebView),
+          provideMraidMessageHandler(),
+          provideDeviceUtil(),
+          provideViewPositionTracker(),
+          provideExternalVideoPlayer()
+      );
+    }
+  }
+
+  @NonNull
+  public CriteoBannerAdWebViewFactory provideAdWebViewFactory() {
+    return getOrCreate(CriteoBannerAdWebViewFactory.class, CriteoBannerAdWebViewFactory::new);
+  }
+
+  public ViewPositionTracker provideViewPositionTracker() {
+    return getOrCreate(
+        ViewPositionTracker.class,
+        () -> new ViewPositionTracker(provideRunOnUiThreadExecutor(), provideDeviceUtil())
+    );
+  }
+
+  public ExternalVideoPlayer provideExternalVideoPlayer() {
+    return getOrCreate(
+        ExternalVideoPlayer.class,
+        () -> new ExternalVideoPlayer(provideContext(), provideDeviceUtil())
+    );
+  }
+
+  public MraidExpandBannerMediator provideMraidExpandBannerMediator() {
+    return getOrCreate(
+        MraidExpandBannerMediator.class,
+        () -> new MraidExpandBannerMediator()
+    );
   }
 
   public interface Factory<T> {

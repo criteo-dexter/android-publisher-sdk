@@ -27,11 +27,12 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
+import com.criteo.publisher.logging.RemoteLogRecords.RemoteLogLevel;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
 import com.criteo.publisher.util.BuildConfigWrapper;
@@ -39,6 +40,7 @@ import com.criteo.publisher.util.JsonSerializer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.function.Function;
 import org.junit.Before;
 import org.junit.Rule;
@@ -46,12 +48,16 @@ import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.InOrder;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class ConfigTest {
 
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @SpyBean
   private BuildConfigWrapper buildConfigWrapper;
@@ -66,8 +72,6 @@ public class ConfigTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     when(sharedPreferences.getString(any(), any()))
         .thenAnswer(invocation -> invocation.getArguments()[1]);
   }
@@ -200,6 +204,36 @@ public class ConfigTest {
     refreshConfig_assertItIsUnchanged(newConfig, Config::isPrefetchOnInitEnabled);
   }
 
+  @Test
+  public void refreshConfig_GivenMissingRemoteLogLevel_ItIsUnchanged() throws Exception {
+    givenNewConfig();
+
+    RemoteConfigResponse newConfig = givenFullNewPayload(config);
+    when(newConfig.getRemoteLogLevel()).thenReturn(null);
+
+    refreshConfig_assertItIsUnchanged(newConfig, Config::getRemoteLogLevel);
+  }
+
+  @Test
+  public void refreshConfig_GivenMissingIsMraidEnabled_ItIsUnchanged() throws Exception {
+    givenNewConfig();
+
+    RemoteConfigResponse newConfig = givenFullNewPayload(config);
+    when(newConfig.isMraidEnabled()).thenReturn(null);
+
+    refreshConfig_assertItIsUnchanged(newConfig, Config::isMraidEnabled);
+  }
+
+  @Test
+  public void refreshConfig_GivenMissingIsMraid2Enabled_ItIsUnchanged() throws Exception {
+    givenNewConfig();
+
+    RemoteConfigResponse newConfig = givenFullNewPayload(config);
+    when(newConfig.isMraid2Enabled()).thenReturn(null);
+
+    refreshConfig_assertItIsUnchanged(newConfig, Config::isMraid2Enabled);
+  }
+
   private <T> void refreshConfig_assertItIsUnchanged(
       RemoteConfigResponse newConfig,
       Function<Config, T> projection
@@ -218,7 +252,7 @@ public class ConfigTest {
 
     givenNewConfig();
 
-    RemoteConfigResponse newConfig = RemoteConfigResponse.create(
+    RemoteConfigResponse newConfig = new RemoteConfigResponse(
         true,
         "urlMacro",
         null,
@@ -227,6 +261,9 @@ public class ConfigTest {
         false,
         false,
         42,
+        false,
+        RemoteLogLevel.ERROR,
+        false,
         false
     );
 
@@ -255,7 +292,7 @@ public class ConfigTest {
 
     config.refreshConfig(newConfig);
 
-    verifyZeroInteractions(editor);
+    verifyNoInteractions(editor);
   }
 
   @Test
@@ -269,6 +306,8 @@ public class ConfigTest {
     boolean csmEnabled = config.isCsmEnabled();
     boolean liveBiddingEnabled = config.isLiveBiddingEnabled();
     int liveBiddingTimeBudgetInMillis = config.getLiveBiddingTimeBudgetInMillis();
+    boolean isMraidEnabled = config.isMraidEnabled();
+    boolean isMraid2Enabled = config.isMraid2Enabled();
 
     RemoteConfigResponse newConfig = givenFullNewPayload(config);
 
@@ -282,7 +321,8 @@ public class ConfigTest {
     assertEquals(csmEnabled, !config.isCsmEnabled());
     assertEquals(liveBiddingEnabled, !config.isLiveBiddingEnabled());
     assertEquals(1 + liveBiddingTimeBudgetInMillis, config.getLiveBiddingTimeBudgetInMillis());
-
+    assertEquals(isMraidEnabled, !config.isMraidEnabled());
+    assertEquals(isMraid2Enabled, !config.isMraid2Enabled());
   }
 
   private void givenNewConfig() {
@@ -300,6 +340,16 @@ public class ConfigTest {
     when(response.getLiveBiddingEnabled()).thenReturn(!config.isLiveBiddingEnabled());
     when(response.getLiveBiddingTimeBudgetInMillis()).thenReturn(1 + config.getLiveBiddingTimeBudgetInMillis());
     when(response.getPrefetchOnInitEnabled()).thenReturn(!config.isPrefetchOnInitEnabled());
+
+    // Get any value that is not the one set in the given config
+    RemoteLogLevel otherLogLevel = Arrays.stream(RemoteLogLevel.values())
+        .filter(logLevel -> logLevel != config.getRemoteLogLevel())
+        .findFirst().get();
+
+    when(response.getRemoteLogLevel()).thenReturn(otherLogLevel);
+    when(response.isMraidEnabled()).thenReturn(!config.isMraidEnabled());
+    when(response.isMraid2Enabled()).thenReturn(!config.isMraid2Enabled());
+
     return response;
   }
 
@@ -316,6 +366,8 @@ public class ConfigTest {
     assertTrue(config.isCsmEnabled());
     assertFalse(config.isLiveBiddingEnabled());
     assertEquals(8000, config.getLiveBiddingTimeBudgetInMillis());
+    assertFalse(config.isMraidEnabled());
+    assertFalse(config.isMraid2Enabled());
   }
 
 }

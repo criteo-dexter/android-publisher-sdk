@@ -23,7 +23,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import android.content.Context;
@@ -31,12 +31,17 @@ import android.content.pm.ResolveInfo;
 import com.criteo.publisher.activity.TopActivityFinder;
 import com.criteo.publisher.tasks.InterstitialListenerNotifier;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class InterstitialActivityHelperUnitTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock(answer = Answers.RETURNS_DEEP_STUBS)
   private Context context;
@@ -51,8 +56,6 @@ public class InterstitialActivityHelperUnitTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     helper = spy(new InterstitialActivityHelper(context, topActivityFinder));
   }
 
@@ -62,7 +65,7 @@ public class InterstitialActivityHelperUnitTest {
 
     helper.openActivity("myContent", listenerNotifier);
 
-    verifyZeroInteractions(context);
+    verifyNoInteractions(context);
   }
 
   @Test

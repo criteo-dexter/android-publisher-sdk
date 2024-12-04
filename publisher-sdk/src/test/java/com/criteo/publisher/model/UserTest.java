@@ -16,46 +16,62 @@
 
 package com.criteo.publisher.model;
 
-import static junit.framework.Assert.assertFalse;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 
+import com.criteo.publisher.mock.MockedDependenciesRule;
+import com.criteo.publisher.util.JsonSerializer;
+import com.criteo.publisher.util.JsonSerializerExtKt;
+import java.io.IOException;
+import java.util.HashMap;
+import javax.inject.Inject;
+import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.Rule;
 import org.junit.Test;
 
 public class UserTest {
 
+  @Rule
+  public final MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+
+  @Inject
+  private JsonSerializer serializer;
+
   @Test
   public void testToJson_AllFieldsProvided() throws Exception {
-    User user = User.create(
+    User user = new User(
         "deviceId",
-        "fake_mopub_consent",
         "fake_usp_iab",
-        "true" /* uspOptout */
+        "true" /* uspOptout */,
+        new HashMap<>()
     );
 
-    JSONObject jsonObject = user.toJson();
+    JSONObject jsonObject = toJson(user);
 
     assertEquals("deviceId", jsonObject.get("deviceId"));
     assertEquals("gaid", jsonObject.get("deviceIdType"));
     assertEquals("android", jsonObject.get("deviceOs"));
     assertEquals("fake_usp_iab", jsonObject.get("uspIab"));
     assertEquals("true", jsonObject.get("uspOptout"));
-    assertEquals("fake_mopub_consent", jsonObject.get("mopubConsent"));
   }
 
   @Test
   public void testToJson_UspValuesNotProvided() throws Exception {
-    User user = User.create(
+    User user = new User(
         "deviceId",
         null,
         null,
-        null
+        new HashMap<>()
     );
 
-    JSONObject jsonObject = user.toJson();
+    JSONObject jsonObject = toJson(user);
 
     assertFalse(jsonObject.has("uspIab"));
     assertFalse(jsonObject.has("uspOptout"));
-    assertFalse(jsonObject.has("mopubConsent"));
+  }
+
+  private JSONObject toJson(User user) throws IOException, JSONException {
+    return new JSONObject(JsonSerializerExtKt.writeIntoString(serializer, user));
   }
 }

@@ -36,7 +36,7 @@ class MetricRequestTest {
 
   @Test
   fun create_GivenNoMetric_ReturnEmptyRequest() {
-    val request = MetricRequest.create(emptyList(), "1.2.3", 456)
+    val request = MetricRequest(emptyList<Metric>(), "1.2.3", 456)
 
     assertThat(request.feedbacks).isEmpty()
     assertThat(request.wrapperVersion).isEqualTo("1.2.3")
@@ -59,7 +59,7 @@ class MetricRequestTest {
         .setZoneId(1339)
         .build()
 
-    val request = MetricRequest.create(listOf(metric1, metric2), "1.2.3", 456)
+    val request = MetricRequest(listOf(metric1, metric2), "1.2.3", 456)
 
     assertThat(request.feedbacks).hasSize(2)
     assertThat(request.feedbacks[0]).matchEmptyMetric("id1")
@@ -72,9 +72,9 @@ class MetricRequestTest {
             feedbackJson(impressionId = "id1", requestGroupId = null),
             feedbackJson(
                 impressionId = "id2",
-                cdbCallEndElapsed = 43 - 1,
+                cdbCallEndElapsed = 43L - 1,
                 cachedBidUsed = true,
-                elapsed = 1338 - 1,
+                elapsed = 1338L - 1,
                 zoneId = 1339
             )
         )
@@ -86,7 +86,7 @@ class MetricRequestTest {
     val metric = Metric.builder("id")
         .build()
 
-    val request = MetricRequest.create(listOf(metric), "1.2.3", 456)
+    val request = MetricRequest(listOf(metric), "1.2.3", 456)
 
     assertThat(request.feedbacks).hasSize(1).allSatisfy {
       assertThat(it).matchEmptyMetric("id")
@@ -94,7 +94,9 @@ class MetricRequestTest {
     assertThat(request.wrapperVersion).isEqualTo("1.2.3")
     assertThat(request.profileId).isEqualTo(456)
 
-    assertThat(serializer.writeIntoString(request)).isEqualToIgnoringWhitespace(expectedSingleJson(requestGroupId = null))
+    val actualJson = serializer.writeIntoString(request)
+    val expectedJson = expectedSingleJson(requestGroupId = null)
+    assertThat(actualJson).isEqualToIgnoringWhitespace(expectedJson)
   }
 
   @Test
@@ -104,7 +106,7 @@ class MetricRequestTest {
         .setCdbCallStartTimestamp(42L)
         .build()
 
-    val request = MetricRequest.create(listOf(metric), "1.2.3", 456)
+    val request = MetricRequest(listOf(metric), "1.2.3", 456)
 
     assertThat(request.feedbacks).hasSize(1).allSatisfy {
       assertThat(it.slots).hasSize(1).allSatisfy {
@@ -131,7 +133,7 @@ class MetricRequestTest {
         .setCdbCallTimeout(true)
         .build()
 
-    val request = MetricRequest.create(listOf(metric), "1.2.3", 456)
+    val request = MetricRequest(listOf(metric), "1.2.3", 456)
 
     assertThat(request.feedbacks).hasSize(1).allSatisfy {
       assertThat(it.slots).hasSize(1).allSatisfy {
@@ -159,7 +161,7 @@ class MetricRequestTest {
         .setCdbCallEndTimestamp(1337L)
         .build()
 
-    val request = MetricRequest.create(listOf(metric), "1.2.3", 456)
+    val request = MetricRequest(listOf(metric), "1.2.3", 456)
 
     assertThat(request.feedbacks).hasSize(1).allSatisfy {
       assertThat(it.slots).hasSize(1).allSatisfy {
@@ -169,14 +171,14 @@ class MetricRequestTest {
       assertThat(it.elapsed).isNull()
       assertThat(it.isTimeout).isFalse()
       assertThat(it.cdbCallStartElapsed).isEqualTo(0L)
-      assertThat(it.cdbCallEndElapsed).isEqualTo(1337 - 42)
+      assertThat(it.cdbCallEndElapsed).isEqualTo(1337L - 42)
       assertThat(it.requestGroupId).isEqualTo("requestId")
     }
     assertThat(request.wrapperVersion).isEqualTo("1.2.3")
     assertThat(request.profileId).isEqualTo(456)
 
     assertThat(serializer.writeIntoString(request)).isEqualToIgnoringWhitespace(expectedSingleJson(
-        cdbCallEndElapsed = 1337 - 42))
+        cdbCallEndElapsed = 1337L - 42))
   }
 
   @Test
@@ -188,7 +190,7 @@ class MetricRequestTest {
         .setCachedBidUsed(true)
         .build()
 
-    val request = MetricRequest.create(listOf(metric), "1.2.3", 456)
+    val request = MetricRequest(listOf(metric), "1.2.3", 456)
 
     assertThat(request.feedbacks).hasSize(1).allSatisfy {
       assertThat(it.slots).hasSize(1).allSatisfy {
@@ -198,7 +200,7 @@ class MetricRequestTest {
       assertThat(it.elapsed).isNull()
       assertThat(it.isTimeout).isFalse()
       assertThat(it.cdbCallStartElapsed).isEqualTo(0L)
-      assertThat(it.cdbCallEndElapsed).isEqualTo(43 - 1)
+      assertThat(it.cdbCallEndElapsed).isEqualTo(43L - 1)
       assertThat(it.requestGroupId).isEqualTo("requestId")
     }
     assertThat(request.wrapperVersion).isEqualTo("1.2.3")
@@ -206,7 +208,7 @@ class MetricRequestTest {
 
     assertThat(serializer.writeIntoString(request)).isEqualToIgnoringWhitespace(expectedSingleJson(
         impressionId = "impId",
-        cdbCallEndElapsed = 43 - 1,
+        cdbCallEndElapsed = 43L - 1,
         cachedBidUsed = true))
   }
 
@@ -221,7 +223,7 @@ class MetricRequestTest {
         .setZoneId(1339)
         .build()
 
-    val request = MetricRequest.create(listOf(metric), "3.2.1", 654)
+    val request = MetricRequest(listOf(metric), "3.2.1", 654)
 
     assertThat(request.feedbacks).hasSize(1).allSatisfy {
       assertThat(it).matchConsumedBidMetric("impId")
@@ -232,9 +234,9 @@ class MetricRequestTest {
     assertThat(serializer.writeIntoString(request)).isEqualToIgnoringWhitespace(
         expectedSingleJson(
             impressionId = "impId",
-            cdbCallEndElapsed = 43 - 1,
+            cdbCallEndElapsed = 43L - 1,
             cachedBidUsed = true,
-            elapsed = 1338 - 1,
+            elapsed = 1338L - 1,
             wrapperVersion = "3.2.1",
             profileId = 654,
             zoneId = 1339
@@ -259,6 +261,7 @@ class MetricRequestTest {
     }
   }
 
+  @Suppress("LongParameterList")
   private fun ObjectAssert<MetricRequest.MetricRequestFeedback>.matchConsumedBidMetric(
       impressionId: String,
       requestGroupId: String = "requestId",
@@ -281,9 +284,10 @@ class MetricRequestTest {
     }
   }
 
-  private fun expectedEmptyJson(wrapperVersion: String = "1.2.3", profileId: Int = 456)
-      = expectedMultipleJson(wrapperVersion = wrapperVersion, profileId = profileId)
+  private fun expectedEmptyJson(wrapperVersion: String = "1.2.3", profileId: Int = 456) =
+      expectedMultipleJson(wrapperVersion = wrapperVersion, profileId = profileId)
 
+  @Suppress("LongParameterList")
   private fun expectedSingleJson(
       impressionId: String = "id",
       requestGroupId: String? = "requestId",
@@ -323,6 +327,7 @@ class MetricRequestTest {
       """.trimIndent()
   }
 
+  @Suppress("LongParameterList")
   private fun feedbackJson(
       impressionId: String = "id",
       requestGroupId: String? = "requestId",
@@ -345,5 +350,4 @@ class MetricRequestTest {
       ${requestGroupId?.let { ",\"requestGroupId\": \"$it\"" } ?: ""}
     }""".trimIndent()
   }
-
 }

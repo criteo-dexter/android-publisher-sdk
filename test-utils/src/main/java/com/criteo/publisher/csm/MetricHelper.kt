@@ -16,13 +16,10 @@
 
 package com.criteo.publisher.csm
 
-import android.os.Build
-import androidx.annotation.RequiresApi
 import com.criteo.publisher.DependencyProvider
 
 object MetricHelper {
 
-  @RequiresApi(Build.VERSION_CODES.JELLY_BEAN_MR1)
   @JvmStatic
   fun cleanState(dependencyProvider: DependencyProvider) {
     // Empty metric repository
@@ -32,8 +29,7 @@ object MetricHelper {
     }
 
     // Empty sending queue
-    val queue = dependencyProvider.provideMetricSendingQueue()
-    queue.poll(Integer.MAX_VALUE)
+    ConcurrentSendingQueueHelper.emptyQueue(dependencyProvider.provideMetricSendingQueue())
   }
 
   val MetricRequest.internalProfileId: Int

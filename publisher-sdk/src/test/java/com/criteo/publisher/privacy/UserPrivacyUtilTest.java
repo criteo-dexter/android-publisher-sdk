@@ -18,6 +18,7 @@ package com.criteo.publisher.privacy;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -27,11 +28,16 @@ import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import com.criteo.publisher.privacy.gdpr.GdprDataFetcher;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class UserPrivacyUtilTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private SharedPreferences sharedPreferences;
@@ -46,7 +52,6 @@ public class UserPrivacyUtilTest {
 
   @Before
   public void setUp() {
-    MockitoAnnotations.initMocks(this);
     userPrivacyUtil = new UserPrivacyUtil(sharedPreferences, gdprDataFetcher);
   }
 
@@ -148,44 +153,6 @@ public class UserPrivacyUtilTest {
   }
 
   @Test
-  public void testSetMopubConsentValue() {
-    when(sharedPreferences.edit()).thenReturn(editor);
-
-    userPrivacyUtil.storeMopubConsent("fake_mopub_consent_value");
-
-    verify(editor, timeout(1)).putString("MoPubConsent_String", "fake_mopub_consent_value");
-  }
-
-  @Test
-  public void testGetMopubConsentValue() {
-    when(sharedPreferences.getString("MoPubConsent_String", ""))
-        .thenReturn("fake_mopub_consent_value");
-
-    String mopubConsent = userPrivacyUtil.getMopubConsent();
-
-    assertEquals("fake_mopub_consent_value", mopubConsent);
-  }
-
-  @Test
-  public void testIsMopubConsentGiven_True() {
-    assertMopubConsentGiven("EXPLICIT_YES", true);
-    assertMopubConsentGiven("UNKNOWN", true);
-    assertMopubConsentGiven("", true);
-  }
-
-  @Test
-  public void testIsMopubConsentGiven_False() {
-    assertMopubConsentGiven("EXPLICIT_NO", false);
-    assertMopubConsentGiven("POTENTIAL_WHITELIST", false);
-    assertMopubConsentGiven("DNT", false);
-  }
-
-  private void assertMopubConsentGiven(String mopubConsentString, boolean consentGiven) {
-    when(sharedPreferences.getString("MoPubConsent_String", "")).thenReturn(mopubConsentString);
-    assertEquals(consentGiven, userPrivacyUtil.isMopubConsentGivenOrNotApplicable());
-  }
-
-  @Test
   public void testIsCCPAConsentGiven_True() {
     assertCCPAConsentGiven("1YNN", "true", true);
     assertCCPAConsentGiven("1YNY", "true", true);
@@ -208,6 +175,32 @@ public class UserPrivacyUtilTest {
     assertCCPAConsentGiven("1nny", "", false);
     assertCCPAConsentGiven("1nyn", "", false);
     assertCCPAConsentGiven("", "true", false);
+  }
+
+  @Test
+  public void whenTagForChildDirectedTreatmentIsNotSet_shouldReturnNull() {
+    assertNull(userPrivacyUtil.getTagForChildDirectedTreatment());
+  }
+
+  @Test
+  public void whenTagForChildDirectedTreatmentIsSetToTrue_shouldReturnTrue() {
+    userPrivacyUtil.storeTagForChildDirectedTreatment(true);
+
+    assertEquals(true, userPrivacyUtil.getTagForChildDirectedTreatment());
+  }
+
+  @Test
+  public void whenTagForChildDirectedTreatmentIsSetToFalse_shouldReturnTrue() {
+    userPrivacyUtil.storeTagForChildDirectedTreatment(false);
+
+    assertEquals(false, userPrivacyUtil.getTagForChildDirectedTreatment());
+  }
+
+  @Test
+  public void whenTagForChildDirectedTreatmentIsSetNull_shouldReturnNull() {
+    userPrivacyUtil.storeTagForChildDirectedTreatment(null);
+
+    assertNull(userPrivacyUtil.getTagForChildDirectedTreatment());
   }
 
   private void assertCCPAConsentGiven(

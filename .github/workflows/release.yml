@@ -10,14 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Disable TCP/UDP Offloading (Linux)
+        shell: bash
+        run: sudo ethtool -K eth0 tx off rx off
 
       - name: Set up Android SDK
-        uses: malinskiy/action-android/install-sdk@release/0.0.7
+        uses: malinskiy/action-android/install-sdk@release/0.1.4
 
       - name: Deploy artifacts and notify on Slack
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-          BINTRAY_USER: ${{ secrets.BINTRAY_USER }}
-          BINTRAY_KEY: ${{ secrets.BINTRAY_KEY }}
-        run: ./gradlew bintrayUpload sendReleaseDeployedToBintrayMessageToSlack -PisRelease=true
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          MAVEN_SECRING_GPG_BASE64: ${{ secrets.MAVEN_SECRING_GPG_BASE64 }}
+          MAVEN_SECRING_PASSWORD: ${{ secrets.MAVEN_SECRING_PASSWORD }}
+        run: ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository sendReleaseDeployedToSonatypeMessageToSlack -PisRelease=true

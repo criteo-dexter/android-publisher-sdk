@@ -16,13 +16,12 @@
 
 package com.criteo.publisher.csm;
 
-import android.os.Build.VERSION_CODES;
 import android.util.AtomicFile;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.NonNull;
-import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 import com.criteo.publisher.csm.MetricRepository.MetricUpdater;
+import com.criteo.publisher.util.JsonSerializer;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -38,7 +37,6 @@ import java.lang.ref.SoftReference;
  * <p>
  * So only, at most, one {@link SyncMetricFile} should exist for an underlying file.
  */
-@RequiresApi(api = VERSION_CODES.JELLY_BEAN_MR1)
 class SyncMetricFile {
 
   @NonNull
@@ -57,7 +55,7 @@ class SyncMetricFile {
   private final Object fileLock = new Object();
 
   @NonNull
-  private final MetricParser parser;
+  private final JsonSerializer jsonSerializer;
 
   @NonNull
   private volatile SoftReference<Metric> metricInMemory;
@@ -65,11 +63,11 @@ class SyncMetricFile {
   SyncMetricFile(
       @NonNull String impressionId,
       @NonNull AtomicFile file,
-      @NonNull MetricParser parser
+      @NonNull JsonSerializer jsonSerializer
   ) {
     this.impressionId = impressionId;
     this.file = file;
-    this.parser = parser;
+    this.jsonSerializer = jsonSerializer;
     this.metricInMemory = new SoftReference<>(null);
   }
 
@@ -158,7 +156,7 @@ class SyncMetricFile {
 
     try (InputStream is = file.openRead();
         BufferedInputStream bis = new BufferedInputStream(is)) {
-      return parser.read(bis);
+      return jsonSerializer.read(Metric.class, bis);
     }
   }
 
@@ -166,7 +164,7 @@ class SyncMetricFile {
     try (FileOutputStream fos = file.startWrite();
         BufferedOutputStream bos = new BufferedOutputStream(fos)) {
       try {
-        parser.write(metric, bos);
+        jsonSerializer.write(metric, bos);
         file.finishWrite(fos);
       } catch (IOException e) {
         file.failWrite(fos);

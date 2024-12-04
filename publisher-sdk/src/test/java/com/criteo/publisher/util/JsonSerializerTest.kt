@@ -17,11 +17,19 @@
 package com.criteo.publisher.util
 
 import com.criteo.publisher.mock.MockedDependenciesRule
-import com.nhaarman.mockitokotlin2.*
+import com.squareup.moshi.JsonClass
 import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Rule
 import org.junit.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doThrow
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.verify
+import java.io.ByteArrayInputStream
+import java.io.EOFException
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import javax.inject.Inject
 
@@ -38,10 +46,10 @@ class JsonSerializerTest {
   fun write_GivenStreamThatThrowsWhenWriting_ThrowIoException() {
     val value = Dummy()
     val stream = mock<OutputStream> {
-      on { write(any<Int>()) } doThrow(IOException::class)
-      on { write(any<ByteArray>()) } doThrow(IOException::class)
-      on { write(any(), any(), any()) } doThrow(IOException::class)
-      on { flush() } doThrow(IOException::class)
+      on { write(any<Int>()) } doThrow IOException::class
+      on { write(any<ByteArray>()) } doThrow IOException::class
+      on { write(any(), any(), any()) } doThrow IOException::class
+      on { flush() } doThrow IOException::class
     }
 
     assertThatCode {
@@ -69,6 +77,25 @@ class JsonSerializerTest {
     verify(stream, never()).close()
   }
 
-  private data class Dummy(private val dummy: String = "")
+  @Test
+  fun read_GivenEmptyInputStream_ThrowEOF() {
+    assertThatCode {
+      serializer.read(Dummy::class.java, "".toInputStream())
+    }.isInstanceOf(EOFException::class.java)
+  }
 
+  @Test
+  fun read_GivenIllFormedJson_ThrowIOException() {
+    assertThatCode {
+      serializer.read(Dummy::class.java, "{".toInputStream())
+    }.isInstanceOf(IOException::class.java)
+  }
+
+  private fun String.toInputStream(): InputStream {
+    return ByteArrayInputStream(toByteArray())
+  }
+
+  @Suppress("UnusedPrivateMember")
+  @JsonClass(generateAdapter = true)
+  internal data class Dummy(val dummy: String = "")
 }

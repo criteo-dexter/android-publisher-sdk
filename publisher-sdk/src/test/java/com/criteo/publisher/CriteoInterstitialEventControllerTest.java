@@ -27,16 +27,22 @@ import static org.mockito.Mockito.when;
 
 import android.content.Context;
 import androidx.annotation.NonNull;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.interstitial.InterstitialActivityHelper;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.WebViewData;
 import com.criteo.publisher.tasks.InterstitialListenerNotifier;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class CriteoInterstitialEventControllerTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private InterstitialListenerNotifier listenerNotifier;
@@ -57,8 +63,6 @@ public class CriteoInterstitialEventControllerTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     controller = spy(createController());
   }
 
@@ -121,11 +125,11 @@ public class CriteoInterstitialEventControllerTest {
   public void fetchAdAsyncStandalone_GivenUnavailableInterstitialActivity_NotifyForFailureWithoutAskingForBid() throws Exception {
     when(interstitialActivityHelper.isAvailable()).thenReturn(false);
 
-    controller.fetchAdAsync(mock(AdUnit.class));
+    controller.fetchAdAsync(mock(AdUnit.class), mock(ContextData.class));
 
     verify(controller, never()).fetchCreativeAsync(any());
     verify(controller).notifyForFailure();
-    verify(criteo, never()).getBidForAdUnit(any(), any());
+    verify(criteo, never()).getBidForAdUnit(any(), any(), any());
   }
 
   private void givenLoadedWebViewData() {

@@ -17,9 +17,8 @@
 package com.criteo.publisher;
 
 import android.app.Application;
-import androidx.test.InstrumentationRegistry;
+import com.criteo.publisher.application.InstrumentationUtil;
 import com.criteo.publisher.model.AdUnit;
-import com.criteo.publisher.util.InstrumentationUtil;
 import java.util.Arrays;
 import java.util.List;
 
@@ -28,6 +27,7 @@ public class CriteoUtil {
   public static final String TEST_CP_ID = "B-000001";
   public static final String PROD_CP_ID = "B-056946";
   public static final String PROD_CDB_URL = "https://bidder.criteo.com";
+  public static final String TEST_INVENTORY_GROUP_ID = "testInventoryGroupId";
 
   public static Criteo givenInitializedCriteo(AdUnit... preloadedAdUnits)
       throws CriteoInitException {
@@ -48,8 +48,7 @@ public class CriteoUtil {
   }
 
   public static Criteo.Builder getCriteoBuilder(AdUnit... preloadedAdUnits) {
-    Application app = (Application) InstrumentationRegistry.getTargetContext()
-        .getApplicationContext();
+    Application app = InstrumentationUtil.getApplication();
 
     // clears any side effects from previous calls
     Criteo.setInstance(null);

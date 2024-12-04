@@ -28,8 +28,11 @@ import com.criteo.publisher.BidManager;
 import com.criteo.publisher.CriteoErrorCode;
 import com.criteo.publisher.DependencyProvider;
 import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.integration.Integration;
 import com.criteo.publisher.integration.IntegrationRegistry;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.model.CdbResponseSlot;
 import com.criteo.publisher.model.NativeAdUnit;
 import com.criteo.publisher.model.nativeads.NativeAssets;
@@ -39,8 +42,10 @@ import java.lang.ref.WeakReference;
 @Keep
 public class CriteoNativeLoader {
 
-  @NonNull
-  private final NativeAdUnit adUnit;
+  private final Logger logger = LoggerFactory.getLogger(getClass());
+
+  @Nullable
+  final NativeAdUnit adUnit;
 
   @NonNull
   private final CriteoNativeAdListener listener;
@@ -51,14 +56,29 @@ public class CriteoNativeLoader {
   @Nullable
   private CriteoNativeRenderer renderer;
 
+  /**
+   * Used by in-house auction
+   */
+  public CriteoNativeLoader(
+      @NonNull CriteoNativeAdListener listener,
+      @NonNull CriteoNativeRenderer renderer
+  ) {
+    //noinspection ConstantConditions
+    this(null, listener, renderer);
+  }
+
+  /**
+   * Used by Standalone
+   */
   public CriteoNativeLoader(
       @NonNull NativeAdUnit adUnit,
       @NonNull CriteoNativeAdListener listener,
       @NonNull CriteoNativeRenderer renderer
   ) {
     this.adUnit = adUnit;
-    this.listener = listener;
+    this.listener = new LoggingCriteoNativeAdListener(listener, new WeakReference<>(this));
     this.publisherRenderer = renderer;
+    logger.log(NativeLogMessage.onNativeLoaderInitialized(adUnit));
   }
 
   /**
@@ -84,7 +104,7 @@ public class CriteoNativeLoader {
    * <p>
    * You can add it to your view hierarchy, but it is empty and not rendered yet. To render it, you
    * need to get a {@link CriteoNativeAd} by requesting an ad (see {@link #loadAd()} or {@link
-   * #loadAd(Bid)}), then you can call {@link CriteoNativeAd#renderNativeView(View)}.
+   * #loadAd(Bid)} or {@link #loadAd(ContextData)}), then you can call {@link CriteoNativeAd#renderNativeView(View)}.
    * <p>
    * Note that you are expected to use this method if you're using a recycler view. So you can
    * create your views in <code>onCreateViewHolder</code>, and render them separately in
@@ -112,17 +132,29 @@ public class CriteoNativeLoader {
    * callback.
    */
   public void loadAd() {
+    loadAd(new ContextData());
+  }
+
+  /**
+   * Request the Criteo SDK for a native ad matching the given {@link NativeAdUnit}.
+   * <p>
+   * This method returns immediately. If an ad is available, you will be notified by the {@link
+   * CriteoNativeAdListener#onAdReceived(CriteoNativeAd)} callback. If no ad is available, you will be notified by the
+   * {@link CriteoNativeAdListener#onAdFailedToReceive(CriteoErrorCode)} callback.
+   */
+  public void loadAd(@NonNull ContextData contextData) {
     try {
-      doLoad();
+      doLoad(contextData);
     } catch (Throwable t) {
       PreconditionsUtil.throwOrLog(t);
     }
   }
 
-  private void doLoad() {
+  private void doLoad(@NonNull ContextData contextData) {
+    logger.log(NativeLogMessage.onNativeLoading(this));
     getIntegrationRegistry().declare(Integration.STANDALONE);
 
-    getBidManager().getBidForAdUnit(adUnit, new BidListener() {
+    getBidManager().getBidForAdUnit(adUnit, contextData, new BidListener() {
       @Override
       public void onBidResponse(@NonNull CdbResponseSlot cdbResponseSlot) {
         handleNativeAssets(cdbResponseSlot.getNativeAssets());
@@ -144,6 +176,7 @@ public class CriteoNativeLoader {
   }
 
   private void doLoad(@Nullable Bid bid) {
+    logger.log(NativeLogMessage.onNativeLoading(this, bid));
     getIntegrationRegistry().declare(Integration.IN_HOUSE);
 
     NativeAssets assets = bid == null ? null : bid.consumeNativeAssets();
@@ -165,21 +198,11 @@ public class CriteoNativeLoader {
   }
 
   private void notifyForAdAsync(@NonNull CriteoNativeAd nativeAd) {
-    getUiThreadExecutor().executeAsync(new Runnable() {
-      @Override
-      public void run() {
-        listener.onAdReceived(nativeAd);
-      }
-    });
+    getUiThreadExecutor().executeAsync(() -> listener.onAdReceived(nativeAd));
   }
 
   private void notifyForFailureAsync() {
-    getUiThreadExecutor().executeAsync(new Runnable() {
-      @Override
-      public void run() {
-        listener.onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
-      }
-    });
+    getUiThreadExecutor().executeAsync(() -> listener.onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL));
   }
 
   @NonNull

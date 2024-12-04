@@ -17,7 +17,6 @@
 package com.criteo.publisher;
 
 import static com.criteo.publisher.CriteoListenerCode.CLICK;
-import static com.criteo.publisher.CriteoListenerCode.CLOSE;
 import static com.criteo.publisher.CriteoListenerCode.INVALID;
 import static com.criteo.publisher.CriteoListenerCode.VALID;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_BANNER;
@@ -31,6 +30,7 @@ import com.criteo.publisher.activity.TopActivityFinder;
 import com.criteo.publisher.adview.AdWebViewClient;
 import com.criteo.publisher.adview.RedirectionListener;
 import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.CdbResponseSlot;
 import com.criteo.publisher.tasks.CriteoBannerListenerCallTask;
@@ -40,7 +40,7 @@ import java.lang.ref.WeakReference;
 
 public class CriteoBannerEventController {
   @NonNull
-  private final WeakReference<CriteoBannerView> view;
+  private final WeakReference<CriteoBannerAdWebView> view;
 
   @Nullable
   private final CriteoBannerAdListener adListener;
@@ -55,7 +55,7 @@ public class CriteoBannerEventController {
   private final RunOnUiThreadExecutor executor;
 
   public CriteoBannerEventController(
-      @NonNull CriteoBannerView bannerView,
+      @NonNull CriteoBannerAdWebView bannerView,
       @NonNull Criteo criteo,
       @NonNull TopActivityFinder topActivityFinder,
       @NonNull RunOnUiThreadExecutor runOnUiThreadExecutor
@@ -67,18 +67,18 @@ public class CriteoBannerEventController {
     this.executor = runOnUiThreadExecutor;
   }
 
-  public void fetchAdAsync(@Nullable AdUnit adUnit) {
-   criteo.getBidForAdUnit(adUnit, new BidListener() {
+  public void fetchAdAsync(@Nullable AdUnit adUnit, @NonNull ContextData contextData) {
+    criteo.getBidForAdUnit(adUnit, contextData, new BidListener() {
       @Override
       public void onBidResponse(@NonNull CdbResponseSlot cdbResponseSlot) {
         notifyFor(VALID);
         displayAd(cdbResponseSlot.getDisplayUrl());
       }
 
-     @Override
-     public void onNoBid() {
-       notifyFor(INVALID);
-     }
+      @Override
+      public void onNoBid() {
+        notifyFor(INVALID);
+      }
    });
   }
 
@@ -94,7 +94,7 @@ public class CriteoBannerEventController {
   }
 
   void notifyFor(@NonNull CriteoListenerCode code) {
-    executor.executeAsync(new CriteoBannerListenerCallTask(adListener, view, code));
+    executor.executeAsync(new CriteoBannerListenerCallTask(adListener, new WeakReference(view.get().getParentContainer()), code));
   }
 
   void displayAd(@NonNull String displayUrl) {
@@ -118,8 +118,13 @@ public class CriteoBannerEventController {
       }
 
       @Override
+      public void onRedirectionFailed() {
+        //no-op
+      }
+
+      @Override
       public void onUserBackFromAd() {
-        notifyFor(CLOSE);
+        // Do nothing
       }
     }, bannerActivityName);
   }

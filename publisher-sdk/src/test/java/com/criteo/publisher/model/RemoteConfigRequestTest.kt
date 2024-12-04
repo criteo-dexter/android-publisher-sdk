@@ -35,12 +35,12 @@ class RemoteConfigRequestTest {
 
   @Test
   fun write_GivenData_ReturnSerializedJson() {
-    val request = RemoteConfigRequest.create(
+    val request = RemoteConfigRequest(
         "myCpId",
+        null,
         "my.bundle.id",
         "1.2.3",
-        456,
-        "myDeviceId"
+        456
     )
 
     val json = serializer.writeIntoString(request)
@@ -52,7 +52,32 @@ class RemoteConfigRequestTest {
         "bundleId" : "my.bundle.id",
         "sdkVersion" : "1.2.3",
         "rtbProfileId": 456,
-        "deviceId": "myDeviceId"
+        "deviceOs": "android"
+      }
+    """.trimIndent())
+  }
+
+  @Test
+  fun write_GivenData_ReturnSerializedJsonWithInventoryGroupId() {
+    val request = RemoteConfigRequest(
+      "myCpId",
+      "myInventoryGroupId",
+      "my.bundle.id",
+      "1.2.3",
+      456
+    )
+
+    val json = serializer.writeIntoString(request)
+
+    assertThat(json).isEqualToIgnoringWhitespace(
+      """
+      {
+        "cpId" : "myCpId",
+        "inventoryGroupId": "myInventoryGroupId",
+        "bundleId" : "my.bundle.id",
+        "sdkVersion" : "1.2.3",
+        "rtbProfileId": 456,
+        "deviceOs": "android"
       }
     """.trimIndent())
   }

@@ -30,6 +30,8 @@ import static com.criteo.publisher.activity.TestNativeActivity.PRIVACY_LEGAL_TEX
 import static com.criteo.publisher.activity.TestNativeActivity.PRODUCT_IMAGE_TAG;
 import static com.criteo.publisher.activity.TestNativeActivity.RECYCLER_VIEW_TAG;
 import static com.criteo.publisher.activity.TestNativeActivity.TITLE_TAG;
+import static com.criteo.publisher.advancednative.NativeLogMessage.onNativeClicked;
+import static com.criteo.publisher.advancednative.NativeLogMessage.onNativeImpressionRegistered;
 import static com.criteo.publisher.concurrent.ThreadingUtil.runOnMainThreadAndWait;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
@@ -39,8 +41,10 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 import android.view.ViewGroup;
@@ -51,25 +55,29 @@ import androidx.test.rule.ActivityTestRule;
 import com.criteo.publisher.Criteo;
 import com.criteo.publisher.activity.TestNativeActivity;
 import com.criteo.publisher.adview.Redirection;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.integration.Integration;
+import com.criteo.publisher.logging.Logger;
 import com.criteo.publisher.mock.MockBean;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
+import com.criteo.publisher.model.NativeAdUnit;
 import com.criteo.publisher.model.nativeads.NativeAssets;
 import com.criteo.publisher.model.nativeads.NativeProduct;
 import com.criteo.publisher.network.PubSdkApi;
 import javax.inject.Inject;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
 public class AdvancedNativeFunctionalTest {
 
   @Rule
-  public ActivityTestRule<TestNativeActivity> activityRule = new ActivityTestRule<>(
-      TestNativeActivity.class);
+  public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule().withSpiedLogger();
 
   @Rule
-  public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+  public ActivityTestRule<TestNativeActivity> activityRule = new ActivityTestRule<>(
+      TestNativeActivity.class, false, false);
 
   @Inject
   private AdChoiceOverlay adChoiceOverlay;
@@ -79,6 +87,15 @@ public class AdvancedNativeFunctionalTest {
 
   @SpyBean
   private PubSdkApi api;
+
+  @SpyBean
+  private Logger logger;
+
+  @Before
+  public void setUp() {
+    // Start activity only there so beans are properly injected
+    activityRule.launchActivity(new Intent());
+  }
 
   @Test
   public void loadStandaloneAdInAdLayout_GivenValidBid_DisplayAllInformationInViews()
@@ -100,6 +117,9 @@ public class AdvancedNativeFunctionalTest {
         argThat(request -> request.getProfileId() == Integration.STANDALONE.getProfileId()),
         any()
     );
+
+    verify(logger).log(onNativeImpressionRegistered(NATIVE));
+    verify(logger, atLeastOnce()).log(onNativeClicked(NATIVE));
   }
 
   @Test
@@ -108,12 +128,16 @@ public class AdvancedNativeFunctionalTest {
     mockedDependenciesRule.waitForIdleState();
 
     TestNativeActivity activity = activityRule.getActivity();
-    Criteo.getInstance().loadBid(NATIVE, activity::loadInHouseAdInAdLayout);
+    Criteo.getInstance().loadBid(NATIVE, new ContextData(), activity::loadInHouseAdInAdLayout);
     mockedDependenciesRule.waitForIdleState();
 
-    // Check there is one ad
+    // Load a second ad because detection of InHouse profileId is delayed of one bid
+    Criteo.getInstance().loadBid(NATIVE, new ContextData(), activity::loadInHouseAdInAdLayout);
+    mockedDependenciesRule.waitForIdleState();
+
+    // Check there is two ads
     ViewGroup adLayout = getAdLayout();
-    assertEquals(1, adLayout.getChildCount());
+    assertEquals(2, adLayout.getChildCount());
 
     checkAllInformationAreDisplayed((ViewGroup) adLayout.getChildAt(0));
 
@@ -121,6 +145,9 @@ public class AdvancedNativeFunctionalTest {
         argThat(request -> request.getProfileId() == Integration.IN_HOUSE.getProfileId()),
         any()
     );
+
+    verify(logger, times(2)).log(onNativeImpressionRegistered((NativeAdUnit) null));
+    verify(logger, atLeastOnce()).log(onNativeClicked((NativeAdUnit) null));
   }
 
   @Test
@@ -149,10 +176,10 @@ public class AdvancedNativeFunctionalTest {
     mockedDependenciesRule.waitForIdleState();
 
     TestNativeActivity activity = activityRule.getActivity();
-    Criteo.getInstance().loadBid(NATIVE, activity::loadInHouseAdInRecyclerView);
+    Criteo.getInstance().loadBid(NATIVE, new ContextData(), activity::loadInHouseAdInRecyclerView);
     mockedDependenciesRule.waitForIdleState();
 
-    Criteo.getInstance().loadBid(NATIVE, activity::loadInHouseAdInRecyclerView);
+    Criteo.getInstance().loadBid(NATIVE, new ContextData(), activity::loadInHouseAdInRecyclerView);
     mockedDependenciesRule.waitForIdleState();
 
     // Check there is two ads

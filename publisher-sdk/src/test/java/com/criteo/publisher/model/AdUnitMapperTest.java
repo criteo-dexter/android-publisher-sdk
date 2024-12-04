@@ -20,6 +20,7 @@ import static com.criteo.publisher.model.AdUnitMapper.splitIntoChunks;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_BANNER;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_CUSTOM_NATIVE;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_INTERSTITIAL;
+import static com.criteo.publisher.util.AdUnitType.CRITEO_REWARDED;
 import static java.util.Arrays.asList;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
@@ -29,29 +30,35 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
-import com.criteo.publisher.util.AndroidUtil;
+import com.criteo.publisher.integration.Integration;
+import com.criteo.publisher.integration.IntegrationRegistry;
 import com.criteo.publisher.util.DeviceUtil;
 import java.util.List;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class AdUnitMapperTest {
 
-  @Mock
-  private AndroidUtil androidUtil;
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private DeviceUtil deviceUtil;
+
+  @Mock
+  private IntegrationRegistry integrationRegistry;
 
   private AdUnitMapper mapper;
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
+    when(integrationRegistry.readIntegration()).thenReturn(Integration.FALLBACK);
 
-    mapper = new AdUnitMapper(androidUtil, deviceUtil);
+    mapper = new AdUnitMapper(deviceUtil, integrationRegistry);
   }
 
   @Test
@@ -95,6 +102,17 @@ public class AdUnitMapperTest {
   @Test
   public void convertValidAdUnits_GivenNativeWithEmptyPlacementId_SkipIt() throws Exception {
     AdUnit adUnit = new NativeAdUnit("");
+
+    List<List<CacheAdUnit>> validAdUnits = mapper.mapToChunks(singletonList(adUnit));
+
+    assertThat(validAdUnits).isEmpty();
+  }
+
+  @Test
+  public void convertValidAdUnits_GivenRewardedWithEmptyPlacementId_SkipIt() throws Exception {
+    when(deviceUtil.getCurrentScreenSize()).thenReturn(new AdSize(1, 2));
+
+    AdUnit adUnit = new RewardedAdUnit("");
 
     List<List<CacheAdUnit>> validAdUnits = mapper.mapToChunks(singletonList(adUnit));
 
@@ -151,6 +169,52 @@ public class AdUnitMapperTest {
 
     assertThat(validAdUnits).containsExactly(
         singletonList(new CacheAdUnit(landscapeSize, "adUnit", CRITEO_INTERSTITIAL)));
+  }
+
+  @Test
+  public void convertValidAdUnits_GivenValidRewarded_AndUnsupportedIntegration_FilterIt() throws Exception {
+    when(integrationRegistry.readIntegration()).thenReturn(Integration.IN_HOUSE);
+
+    AdSize portraitSize = new AdSize(10, 30);
+    when(deviceUtil.getCurrentScreenSize()).thenReturn(portraitSize);
+
+    AdUnit adUnit = new RewardedAdUnit("adUnit");
+
+    List<List<CacheAdUnit>> validAdUnits = mapper.mapToChunks(singletonList(adUnit));
+
+    assertThat(validAdUnits).isEmpty();
+  }
+
+  @Test
+  public void convertValidAdUnits_GivenValidRewardedAndDeviceInPortrait_AndSupportedIntegration_MapItWithPortraitSize()
+      throws Exception {
+    when(integrationRegistry.readIntegration()).thenReturn(Integration.GAM_APP_BIDDING);
+
+    AdSize portraitSize = new AdSize(10, 30);
+    when(deviceUtil.getCurrentScreenSize()).thenReturn(portraitSize);
+
+    AdUnit adUnit = new RewardedAdUnit("adUnit");
+
+    List<List<CacheAdUnit>> validAdUnits = mapper.mapToChunks(singletonList(adUnit));
+
+    assertThat(validAdUnits).containsExactly(
+        singletonList(new CacheAdUnit(portraitSize, "adUnit", CRITEO_REWARDED)));
+  }
+
+  @Test
+  public void convertValidAdUnits_GivenValidRewardedAndDeviceInLandscape_AndSupportedIntegration_MapItWithLandscapeSize()
+      throws Exception {
+    when(integrationRegistry.readIntegration()).thenReturn(Integration.GAM_APP_BIDDING);
+
+    AdSize landscapeSize = new AdSize(30, 10);
+    when(deviceUtil.getCurrentScreenSize()).thenReturn(landscapeSize);
+
+    AdUnit adUnit = new RewardedAdUnit("adUnit");
+
+    List<List<CacheAdUnit>> validAdUnits = mapper.mapToChunks(singletonList(adUnit));
+
+    assertThat(validAdUnits).containsExactly(
+        singletonList(new CacheAdUnit(landscapeSize, "adUnit", CRITEO_REWARDED)));
   }
 
   @Test

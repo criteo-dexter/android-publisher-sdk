@@ -15,13 +15,10 @@
  */
 package com.criteo.publisher.model
 
-import android.content.Context
 import com.criteo.publisher.mock.MockedDependenciesRule
 import com.criteo.publisher.privacy.gdpr.GdprData
 import com.criteo.publisher.util.JsonSerializer
 import com.criteo.publisher.util.writeIntoString
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.mock
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Rule
 import org.junit.Test
@@ -37,19 +34,44 @@ class CdbRequestTest {
   private lateinit var serializer: JsonSerializer
 
   @Test
+  @Suppress("LongMethod")
   fun toJson_GivenAllInformation_MapThemToJson() {
-    val context = mock<Context>() {
-      on { packageName } doReturn "myBundleId"
-    }
-
-    val request = CdbRequest.create(
+    val request = CdbRequest(
         "myRequestId",
-        Publisher.create(context, "myCpId"),
-        User.create(null, null, null, null),
+        Publisher(
+            "myBundleId",
+            "myCpId",
+            "myInventoryGroupId",
+            mapOf(
+                "content" to mapOf(
+                    "url" to "https://www.criteo.com"
+                ),
+                "data" to mapOf(
+                    "a" to listOf(1, 2),
+                    "b" to 42.0
+                )
+            )
+        ),
+        User(
+            null,
+            null,
+            null,
+            mapOf(
+                "data" to mapOf(
+                    "a" to listOf(1, 2),
+                    "b" to 42.0
+                ),
+                "device" to mapOf(
+                    "make" to "Manufacturer",
+                    "model" to "DummyModel"
+                )
+            )
+        ),
         "1.2.3",
         456,
-        GdprData.create("consent", true, 42),
-        listOf()
+        GdprData("consent", true, 42),
+        listOf(),
+        CdbRegs(true)
     )
 
     val json = serializer.writeIntoString(request)
@@ -60,9 +82,29 @@ class CdbRequestTest {
         "id": "myRequestId",
         "publisher": {
           "bundleId": "myBundleId",
-          "cpId": "myCpId"
+          "cpId": "myCpId",
+          "inventoryGroupId": "myInventoryGroupId",
+          "ext": {
+            "content": {
+              "url": "https://www.criteo.com"
+            },
+            "data": {
+              "a": [1, 2],
+              "b": 42.0
+            }
+          }
         },
         "user": {
+          "ext": {
+            "data": {
+              "a": [1, 2],
+              "b": 42.0
+            },
+            "device": {
+              "make": "Manufacturer",
+              "model": "DummyModel"
+            }
+          },
           "deviceIdType": "gaid",
           "deviceOs": "android"
         },
@@ -73,25 +115,26 @@ class CdbRequestTest {
           "gdprApplies": true,
           "version": 42
         },
-        "slots": []
+        "slots": [],
+        "regs": {
+          "coppa": true
+        }
       }
-    """.trimIndent())
+    """.trimIndent()
+    )
   }
 
   @Test
   fun toJson_GivenNoGdpr_DoesNotMapIt() {
-    val context = mock<Context>() {
-      on { packageName } doReturn "myBundleId"
-    }
-
-    val request = CdbRequest.create(
+    val request = CdbRequest(
         "myRequestId",
-        Publisher.create(context, "myCpId"),
-        User.create(null, null, null, null),
+        Publisher("myBundleId", "myCpId", "myInventoryGroupId", mapOf()),
+        User(null, null, null, mapOf()),
         "1.2.3",
         456,
         null,
-        listOf()
+        listOf(),
+        null
     )
 
     val json = serializer.writeIntoString(request)
@@ -99,4 +142,39 @@ class CdbRequestTest {
     assertThat(json).doesNotContain("gdprConsent")
   }
 
+  @Test
+  fun toJson_GivenCdbRegsObjectIsNull_DoesNotMapIt() {
+    val request = CdbRequest(
+        "myRequestId",
+        Publisher("myBundleId", "myCpId", "myInventoryGroupId", mapOf()),
+        User(null, null, null, mapOf()),
+        "1.2.3",
+        456,
+        null,
+        listOf(),
+        null
+    )
+
+    val json = serializer.writeIntoString(request)
+
+    assertThat(json).doesNotContain("regs")
+  }
+
+  @Test
+  fun toJson_GivenInventoryGroupIdIsNull_DoesNotMapIt() {
+    val request = CdbRequest(
+      "myRequestId",
+      Publisher("myBundleId", "myCpId", null, mapOf()),
+      User(null, null, null, mapOf()),
+      "1.2.3",
+      456,
+      null,
+      listOf(),
+      null
+    )
+
+    val json = serializer.writeIntoString(request)
+
+    assertThat(json).doesNotContain("inventoryGroupId")
+  }
 }

@@ -17,9 +17,10 @@
 package com.criteo.publisher.tasks;
 
 import static com.criteo.publisher.CriteoListenerCode.INVALID;
+import static com.criteo.publisher.CriteoListenerCode.VALID;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 import com.criteo.publisher.CriteoBannerAdListener;
@@ -27,23 +28,22 @@ import com.criteo.publisher.CriteoBannerView;
 import com.criteo.publisher.CriteoErrorCode;
 import com.criteo.publisher.CriteoListenerCode;
 import java.lang.ref.WeakReference;
-import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class CriteoBannerListenerCallTaskTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private CriteoBannerAdListener criteoBannerAdListener;
 
   @Mock
   CriteoBannerView criteoBannerView;
-
-  @Before
-  public void setup() {
-    MockitoAnnotations.initMocks(this);
-  }
 
   @Test
   public void run_GivenNullListener_DoesNotCrash() throws Exception {
@@ -55,16 +55,22 @@ public class CriteoBannerListenerCallTaskTest {
   }
 
   @Test
+  public void run_GivenNullBanner_DoesNothing() throws Exception {
+    criteoBannerView = null;
+
+    CriteoBannerListenerCallTask task = createTask(VALID);
+    task.run();
+
+    verifyNoInteractions(criteoBannerAdListener);
+  }
+
+  @Test
   public void testWithInvalidCode() {
     CriteoBannerListenerCallTask task = createTask(INVALID);
     task.run();
 
-    verify(criteoBannerAdListener, times(1))
-        .onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
-    verify(criteoBannerAdListener, times(0)).onAdReceived(criteoBannerView);
-    verify(criteoBannerAdListener, times(0)).onAdClicked();
-    verify(criteoBannerAdListener, times(0)).onAdLeftApplication();
-    verify(criteoBannerAdListener, times(0)).onAdOpened();
+    verify(criteoBannerAdListener).onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
+    verifyNoMoreInteractions(criteoBannerAdListener);
 
   }
 
@@ -73,12 +79,8 @@ public class CriteoBannerListenerCallTaskTest {
     CriteoBannerListenerCallTask task = createTask(CriteoListenerCode.VALID);
     task.run();
 
-    verify(criteoBannerAdListener, times(0))
-        .onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
-    verify(criteoBannerAdListener, times(1)).onAdReceived(criteoBannerView);
-    verify(criteoBannerAdListener, times(0)).onAdClicked();
-    verify(criteoBannerAdListener, times(0)).onAdLeftApplication();
-    verify(criteoBannerAdListener, times(0)).onAdOpened();
+    verify(criteoBannerAdListener).onAdReceived(criteoBannerView);
+    verifyNoMoreInteractions(criteoBannerAdListener);
   }
 
   @Test
@@ -86,12 +88,9 @@ public class CriteoBannerListenerCallTaskTest {
     CriteoBannerListenerCallTask task = createTask(CriteoListenerCode.CLICK);
     task.run();
 
-    verify(criteoBannerAdListener, times(0))
-        .onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
-    verify(criteoBannerAdListener, times(0)).onAdReceived(criteoBannerView);
-    verify(criteoBannerAdListener, times(1)).onAdClicked();
-    verify(criteoBannerAdListener, times(1)).onAdLeftApplication();
-    verify(criteoBannerAdListener, times(1)).onAdOpened();
+    verify(criteoBannerAdListener).onAdClicked();
+    verify(criteoBannerAdListener).onAdLeftApplication();
+    verifyNoMoreInteractions(criteoBannerAdListener);
   }
 
   @Test
@@ -99,8 +98,7 @@ public class CriteoBannerListenerCallTaskTest {
     CriteoBannerListenerCallTask task = createTask(CriteoListenerCode.CLOSE);
     task.run();
 
-    verify(criteoBannerAdListener).onAdClosed();
-    verifyNoMoreInteractions(criteoBannerAdListener);
+    verifyNoInteractions(criteoBannerAdListener);
   }
 
   private CriteoBannerListenerCallTask createTask(CriteoListenerCode code) {

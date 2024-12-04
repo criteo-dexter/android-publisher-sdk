@@ -6,26 +6,25 @@
   <string name="title_activity_standalone">Standalone</string>
   <string name="title_activity_splash">PubSDK</string>
   <string name="title_activity_dfp">Google DFP</string>
-  <string name="title_activity_mediation">Mediation</string>
-  <string name="title_activity_mopub">Mopub</string>
   <string name="title_activity_server_bidding">Server Bidding</string>
+  <string name="title_activity_coppa_selector">COPPA Flag Selector</string>
+  <string name="title_activity_mraid">MRAID</string>
 
   <string name="btn_interstitial">Interstitial</string>
   <string name="btn_interstitial_ibv">Interstitial IBV</string>
+  <string name="btn_interstitial_video">Interstitial Video</string>
   <string name="btn_banner">Banner</string>
   <string name="btn_google_dfp_with_version">Google DFP \n v4.5.1</string>
-  <string name="btn_mediation">Mediation</string>
   <string name="btn_standalone">Standalone</string>
   <string name="btn_custom_native">Custom Native</string>
   <string name="btn_in_house_mediation">In-house Mediation</string>
-  <string name="btn_mopub">Mopub</string>
-  <string name="btn_mopub_mediation">Mopub-Mediation</string>
+  <string name="btn_mraid">MRAID</string>
   <string name="btn_admob_mediation">AdMob-Mediation</string>
   <string name="btn_server_bidding">Server Bidding</string>
   <string name="btn_ccpa_consent_selector">CCPA Consent Selector</string>
   <string name="btn_tcf_consent_selector">TCF Consent Selector</string>
+  <string name="btn_coppa_selector">COPPA Flag Selector</string>
   <string name="hint_ccpa_iab">CCPA IAB String</string>
-  <string name="hint_ccpa_mopub">CCPA Mopub String</string>
   <string name="ccpa_binary_value">CCPA Binary Value</string>
 
   <string name="hint_tcf_consent_string">Consent String</string>
@@ -41,4 +40,6 @@
   <string name="integration_bid_caching_warning">Note that because of bid caching, you may need to ask twice for a bid to have the correct profile ID.</string>
   <string name="integration_verbose">Display a toast on forced/detected integration</string>
   <string name="btn_integration_selector">Integration Selector</string>
+  <string name="btn_rewarded_video">Rewarded video</string>
+  <string name="toast_saved">Saved</string>
 </resources>

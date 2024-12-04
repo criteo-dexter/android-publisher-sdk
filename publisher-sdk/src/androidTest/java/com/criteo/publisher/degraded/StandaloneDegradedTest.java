@@ -33,6 +33,7 @@ import com.criteo.publisher.CriteoBannerView;
 import com.criteo.publisher.CriteoErrorCode;
 import com.criteo.publisher.CriteoInterstitial;
 import com.criteo.publisher.CriteoInterstitialAdListener;
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.mock.SpyBean;
 import com.criteo.publisher.model.AdSize;
@@ -45,12 +46,16 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class StandaloneDegradedTest {
 
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   private final BannerAdUnit bannerAdUnit = new BannerAdUnit("banner", new AdSize(1, 2));
   private final InterstitialAdUnit interstitialAdUnit = new InterstitialAdUnit("interstitial");
@@ -66,8 +71,6 @@ public class StandaloneDegradedTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
-
     when(deviceUtil.isVersionSupported()).thenReturn(false);
 
     givenInitializedCriteo();
@@ -77,7 +80,7 @@ public class StandaloneDegradedTest {
   public void whenLoadingABanner_ShouldNotDoAnyCallToCdb() throws Exception {
     runOnMainThreadAndWait(() -> {
       CriteoBannerView bannerView = new CriteoBannerView(context, bannerAdUnit);
-      bannerView.loadAd();
+      bannerView.loadAd(mock(ContextData.class));
     });
 
     waitForIdleState();
@@ -93,11 +96,11 @@ public class StandaloneDegradedTest {
 
     bannerView.setCriteoBannerAdListener(listener);
 
-    runOnMainThreadAndWait(bannerView::loadAd);
+    runOnMainThreadAndWait(() -> bannerView.loadAd(new ContextData()));
     waitForIdleState();
 
     // Load twice, because first one is a cache miss
-    runOnMainThreadAndWait(bannerView::loadAd);
+    runOnMainThreadAndWait(() -> bannerView.loadAd(new ContextData()));
     waitForIdleState();
 
     verify(listener, never()).onAdReceived(any());
@@ -106,11 +109,8 @@ public class StandaloneDegradedTest {
 
   @Test
   public void whenLoadingAnInterstitial_ShouldNotDoAnyCallToCdb() throws Exception {
-    runOnMainThreadAndWait(() -> {
-      CriteoInterstitial interstitial = new CriteoInterstitial(interstitialAdUnit);
-
-      interstitial.loadAd();
-    });
+    CriteoInterstitial interstitial = new CriteoInterstitial(interstitialAdUnit);
+    interstitial.loadAd(new ContextData());
 
     waitForIdleState();
     verifyNoInteractions(api);
@@ -121,16 +121,15 @@ public class StandaloneDegradedTest {
       throws Exception {
     CriteoInterstitialAdListener listener = mock(CriteoInterstitialAdListener.class);
 
-    CriteoInterstitial interstitial = callOnMainThreadAndWait(() ->
-        new CriteoInterstitial(interstitialAdUnit));
+    CriteoInterstitial interstitial = new CriteoInterstitial(interstitialAdUnit);
 
     interstitial.setCriteoInterstitialAdListener(listener);
 
-    runOnMainThreadAndWait(interstitial::loadAd);
+    interstitial.loadAd(new ContextData());
     waitForIdleState();
 
     // Load twice, because first one is a cache miss
-    runOnMainThreadAndWait(interstitial::loadAd);
+    interstitial.loadAd(new ContextData());
     waitForIdleState();
 
     verify(listener, never()).onAdReceived(interstitial);

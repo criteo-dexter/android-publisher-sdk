@@ -16,27 +16,33 @@
 
 import com.slack.api.model.block.composition.BlockCompositions.markdownText
 import org.gradle.api.Project
+import org.gradle.api.artifacts.repositories.MavenArtifactRepository
 import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.kotlin.dsl.withType
 
 fun Project.addSlackDeploymentMessages() {
   afterEvaluate {
-    publishing.publications.withType<MavenPublication> {
-      addSlackDeploymentMessage(this)
+    publishing {
+      repositories.withType<MavenArtifactRepository> {
+        val repository = this
+        publications.withType<MavenPublication> {
+          addSlackDeploymentMessage(this, repository)
+        }
+      }
     }
   }
 }
 
-private fun Project.addSlackDeploymentMessage(publication: MavenPublication) {
+private fun Project.addSlackDeploymentMessage(publication: MavenPublication, repository: MavenArtifactRepository) {
   val webHookUrl = System.getenv("SLACK_WEBHOOK") ?: return
-  val teamChannel = "#pub-sdk-private"
+  val teamChannel = "#direct-pub-data-releases"
   val rcChannel = "#pub-sdk-release-candidates"
   val confluenceSpaceUrl = "https://go.crto.in/publisher-sdk-bugfest"
-  val repoName = "Bintray"
+  val howToReleaseConfluencePage = "https://criteo.atlassian.net/wiki/spaces/PUBSDK/pages/1478067455/How-To+Releasing+the+PublisherSDK"
 
   slack {
     messages {
-      register("${publication.name}DeployedTo${repoName.capitalize()}") {
+      register("${publication.name}DeployedTo${repository.name.capitalize()}") {
         webHook.set(webHookUrl)
 
         payload {
@@ -52,7 +58,7 @@ private fun Project.addSlackDeploymentMessage(publication: MavenPublication) {
         publication {
           publicName.set("PublisherSDK")
           publication(publication)
-          repositoryName.set(repoName)
+          repository(repository)
         }
 
         if (isSnapshot()) {
@@ -94,6 +100,7 @@ private fun Project.addSlackDeploymentMessage(publication: MavenPublication) {
 - Install the <${testAppUrl(publication.version)}|TestApp APK>
 - Go on <$confluenceSpaceUrl/Bugfest+Android+${publication.version}|Bugfest page> and execute tests
 *Release the RC*
+- (Optional) Release new mraid-bridge version as described <${howToReleaseConfluencePage}|here>
 - Create a <https://github.com/criteo/android-publisher-sdk/releases/new|new GitHub release> and insert:
   - Tag version, target, Release title: `v${sdkVersion()}`
   - Description: the changelog above
@@ -113,5 +120,5 @@ private fun testAppUrl(version: String): String {
   //  broken. A proper solution could be to get the publication from the test-app module, but it may
   //  be extracted outside this project.
   //  But coordinates are pretty constant, so this is not a big deal for now.
-  return "https://bintray.com/criteo/mobile/download_file?file_path=com%2Fcriteo%2Fpublisher%2Fcriteo-publisher-sdk-test-app%2F$version%2Fcriteo-publisher-sdk-test-app-$version-staging.apk"
+  return "https://oss.sonatype.org/service/local/repo_groups/public/content/com/criteo/publisher/criteo-publisher-sdk-test-app/$version/criteo-publisher-sdk-test-app-$version-staging.apk"
 }

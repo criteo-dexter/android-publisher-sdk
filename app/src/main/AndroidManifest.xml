@@ -4,20 +4,7 @@
   package="com.criteo.testapp">
 
   <uses-permission android:name="android.permission.INTERNET"/>
-
-  <!--
-  MoPub requires minSdk=19, while the SDK had minSdk=16
-  See https://developer.android.com/studio/build/manifest-merge#override_uses-sdk_for_imported_libraries
-  -->
-  <uses-sdk tools:overrideLibrary="com.criteo.mediation.mopub,
-      com.mopub.mobileads.base,
-      com.mopub.mobileads.banner,
-      com.mopub.mobileads.interstitial,
-      com.mopub.mobileads.native_static,
-      androidx.media2.common,
-      androidx.media2.player,
-      androidx.media2.session,
-      androidx.media2.widget" />
+  <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
 
   <application
     android:allowBackup="true"
@@ -28,8 +15,6 @@
     android:roundIcon="@mipmap/ic_launcher_round"
     android:supportsRtl="true"
     android:theme="@style/AppTheme">
-    <activity android:name=".MopubMediationActivity">
-    </activity>
     <activity
       android:label="@string/title_activity_standalone"
       android:name=".StandaloneActivity"
@@ -48,14 +33,14 @@
     <activity
       android:name=".MainActivity"
       android:theme="@style/AppTheme.NoActionBar"/>
+
     <activity
       android:label="@string/title_activity_splash"
       android:name=".SplashActivity"
-      android:parentActivityName=".MainActivity"
-      android:theme="@style/AppTheme.NoActionBar">
+      android:theme="@style/AppTheme.NoActionBar"
+      android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
-
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
 
@@ -67,15 +52,7 @@
       android:label="@string/title_activity_dfp"
       android:name=".DfpActivity"
       android:configChanges="orientation|screenSize"
-      android:theme="@style/AppTheme">
-      <meta-data
-        android:name="android.support.PARENT_ACTIVITY"
-        android:value=".MainActivity"/>
-    </activity>
-    <activity
-      android:label="@string/title_activity_mediation"
-      android:name=".MediationActivity"
-      android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -84,6 +61,7 @@
     <activity
       android:name=".InHouseActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -93,6 +71,7 @@
     <activity
       android:name=".AdMobMediationActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -102,6 +81,7 @@
     <activity
       android:name=".PrivacyConsentSelectorActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -111,6 +91,7 @@
     <activity
       android:name=".integration.IntegrationSelectorActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -120,6 +101,7 @@
     <activity
       android:name=".GdprActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -129,6 +111,7 @@
     <activity
       android:name=".StandaloneRecyclerViewActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme">
       <meta-data
         android:name="android.support.PARENT_ACTIVITY"
@@ -136,16 +119,26 @@
     </activity>
 
     <activity
-      android:label="@string/title_activity_mopub"
-      android:name=".MopubActivity"
-      android:configChanges="orientation|screenSize"
-      android:theme="@style/AppTheme"/>
-
-    <activity
       android:label="@string/title_activity_server_bidding"
       android:name=".ServerBiddingActivity"
       android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
       android:theme="@style/AppTheme"/>
+
+    <activity
+      android:label="@string/title_activity_coppa_selector"
+      android:name=".CoppaActivity"
+      android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
+      android:theme="@style/AppTheme"/>
+    
+    <activity
+      android:label="@string/title_activity_mraid"
+      android:name=".MraidActivity"
+      android:configChanges="orientation|screenSize"
+      android:parentActivityName=".MainActivity"
+      android:theme="@style/AppTheme" />
+
   </application>
 
 </manifest>

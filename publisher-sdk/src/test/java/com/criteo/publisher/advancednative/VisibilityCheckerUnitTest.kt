@@ -17,16 +17,21 @@
 package com.criteo.publisher.advancednative
 
 import android.view.View
-import com.nhaarman.mockitokotlin2.any
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.stub
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.stub
 
 class VisibilityCheckerUnitTest {
+
+    @Rule
+    @JvmField
+    val mockitoRule = MockitoJUnit.rule()
 
     @Mock
     private lateinit var view: View
@@ -35,8 +40,6 @@ class VisibilityCheckerUnitTest {
 
     @Before
     fun setUp() {
-        MockitoAnnotations.initMocks(this);
-
         checker = VisibilityChecker()
     }
 
@@ -105,5 +108,4 @@ class VisibilityCheckerUnitTest {
             on { getGlobalVisibleRect(any()) } doReturn true
         }
     }
-
 }

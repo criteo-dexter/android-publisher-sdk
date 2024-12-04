@@ -19,6 +19,7 @@ package com.criteo.publisher.cache;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_BANNER;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_CUSTOM_NATIVE;
 import static com.criteo.publisher.util.AdUnitType.CRITEO_INTERSTITIAL;
+import static com.criteo.publisher.util.AdUnitType.CRITEO_REWARDED;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -32,17 +33,22 @@ import com.criteo.publisher.model.AdSize;
 import com.criteo.publisher.model.CacheAdUnit;
 import com.criteo.publisher.model.CdbResponseSlot;
 import com.criteo.publisher.util.DeviceUtil;
-import junit.framework.Assert;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class SdkCacheTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock(answer = Answers.RETURNS_DEEP_STUBS)
   private Context context;
@@ -53,7 +59,6 @@ public class SdkCacheTest {
 
   @Before
   public void setUp() throws Exception {
-    MockitoAnnotations.initMocks(this);
     deviceUtil = spy(new DeviceUtil(context));
     cache = new SdkCache(deviceUtil);
   }
@@ -294,6 +299,24 @@ public class SdkCacheTest {
     doReturn(new AdSize(size.getHeight(), size.getWidth())).when(deviceUtil).getCurrentScreenSize();
 
     CacheAdUnit expectedKey = new CacheAdUnit(size, "myAdUnit", CRITEO_INTERSTITIAL);
+
+    cache.add(slot);
+    CdbResponseSlot adUnit = cache.peekAdUnit(expectedKey);
+
+    assertThat(adUnit).isSameAs(slot);
+  }
+
+  @Test
+  public void add_GivenValidRewardedSlot_AddItInCache() {
+    AdSize size = new AdSize(1, 2);
+
+    CdbResponseSlot slot = mock(CdbResponseSlot.class);
+    when(slot.getWidth()).thenReturn(size.getWidth());
+    when(slot.getHeight()).thenReturn(size.getHeight());
+    when(slot.getPlacementId()).thenReturn("myAdUnit");
+    when(slot.isRewarded()).thenReturn(true);
+
+    CacheAdUnit expectedKey = new CacheAdUnit(size, "myAdUnit", CRITEO_REWARDED);
 
     cache.add(slot);
     CdbResponseSlot adUnit = cache.peekAdUnit(expectedKey);

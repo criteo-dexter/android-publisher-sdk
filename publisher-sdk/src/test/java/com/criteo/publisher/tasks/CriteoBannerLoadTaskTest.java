@@ -17,7 +17,7 @@
 package com.criteo.publisher.tasks;
 
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyZeroInteractions;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import android.webkit.WebView;
@@ -27,12 +27,17 @@ import com.criteo.publisher.model.Config;
 import java.lang.ref.Reference;
 import java.lang.ref.WeakReference;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class CriteoBannerLoadTaskTest {
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock(answer = Answers.RETURNS_DEEP_STUBS)
   private WebView webView;
@@ -47,8 +52,6 @@ public class CriteoBannerLoadTaskTest {
 
   @Before
   public void setup() {
-    MockitoAnnotations.initMocks(this);
-
     webViewRef = new WeakReference<>(webView);
   }
 
@@ -66,7 +69,7 @@ public class CriteoBannerLoadTaskTest {
     verify(webView.getSettings()).setJavaScriptEnabled(true);
     verify(webView).setWebViewClient(webViewClient);
     verify(webView).loadDataWithBaseURL(
-        "",
+        "https://www.criteo.com",
         "myDisplayUrl: https://www.criteo.com",
         "text/html",
         "UTF-8",
@@ -80,7 +83,7 @@ public class CriteoBannerLoadTaskTest {
     CriteoBannerLoadTask criteoBannerLoadTask = createTask("anything");
     criteoBannerLoadTask.run();
 
-    verifyZeroInteractions(config);
+    verifyNoInteractions(config);
   }
 
   @NonNull

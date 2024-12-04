@@ -22,6 +22,7 @@ import org.assertj.core.api.Assertions.assertThatCode
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -35,6 +36,9 @@ class MockedDependenciesRuleTest {
 
   @Inject
   private lateinit var asyncResources: AsyncResources
+
+  @Inject
+  private lateinit var executor: Executor
 
   @Test(timeout = 2000)
   fun waitForIdleState_GivenAsyncTasksDeclaredByAsyncResources_WaitForResourceReleasing() {
@@ -61,7 +65,7 @@ class MockedDependenciesRuleTest {
 
   @Test
   fun withMockedLogger_GivenAnyCreatedLogger_IsAMockContainsByTheMockedDependencyProvider() {
-    mockedDependenciesRule.withMockedLogger()
+    mockedDependenciesRule.withSpiedLogger()
 
     // Resetting the rule because withMockedLogger should normally be called at the rule creation.
     mockedDependenciesRule.resetAllDependencies()
@@ -70,8 +74,7 @@ class MockedDependenciesRuleTest {
     val logger1 = loggerFactory.createLogger(javaClass)
     val logger2 = loggerFactory.createLogger(loggerFactory.javaClass)
 
-    assertThat(logger1).isSameAs(mockedDependenciesRule.mockedLogger)
-    assertThat(logger2).isSameAs(mockedDependenciesRule.mockedLogger)
+    assertThat(logger1).isSameAs(logger2)
   }
 
   @Test
@@ -84,6 +87,24 @@ class MockedDependenciesRuleTest {
 
     assertThat(logger1).isNotNull.isNotEqualTo(logger2)
     assertThat(logger2).isNotNull
-    assertThat(mockedDependenciesRule.mockedLogger).isNull()
+  }
+
+  @Test
+  fun withConcurrentThread_TestShouldBeRanInIsolation() {
+    val latch = CountDownLatch(1)
+    var hadTimeout = false
+
+    executor.execute {
+      hadTimeout = !latch.await(500, TimeUnit.MILLISECONDS)
+    }
+
+    // Simulating a new test
+    mockedDependenciesRule.resetAllDependencies()
+
+    executor.execute {
+      latch.countDown()
+    }
+
+    assertThat(hadTimeout).isTrue()
   }
 }

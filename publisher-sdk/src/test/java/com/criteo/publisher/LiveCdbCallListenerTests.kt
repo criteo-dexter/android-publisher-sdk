@@ -21,18 +21,24 @@ import com.criteo.publisher.model.CacheAdUnit
 import com.criteo.publisher.model.CdbRequest
 import com.criteo.publisher.model.CdbResponse
 import com.criteo.publisher.model.CdbResponseSlot
-import com.nhaarman.mockitokotlin2.any
-import com.nhaarman.mockitokotlin2.never
-import com.nhaarman.mockitokotlin2.times
-import com.nhaarman.mockitokotlin2.verify
-import com.nhaarman.mockitokotlin2.whenever
-import org.junit.Before
+import com.criteo.publisher.privacy.ConsentData
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.InjectMocks
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.any
+import org.mockito.kotlin.never
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 
 class LiveCdbCallListenerTests {
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
+
   @Mock
   private lateinit var bidListener: BidListener
 
@@ -45,6 +51,9 @@ class LiveCdbCallListenerTests {
   @Mock
   private lateinit var cacheAdUnit: CacheAdUnit
 
+  @Mock
+  private lateinit var consentData: ConsentData
+
   @InjectMocks
   private lateinit var liveCdbCallListener: LiveCdbCallListener
 
@@ -56,14 +65,6 @@ class LiveCdbCallListenerTests {
 
   @Mock
   private lateinit var freshCdbResponseSlot: CdbResponseSlot
-
-  @Mock
-  private lateinit var cachedCdbResponseSlot: CdbResponseSlot
-
-  @Before
-  fun setUp() {
-    MockitoAnnotations.initMocks(this)
-  }
 
   @Test
   fun onBidResponse_givenValidResponseServedWithinTimeBudget_ThenDontCache_AndPassTheResponseThrough() {
@@ -181,5 +182,32 @@ class LiveCdbCallListenerTests {
     verify(bidLifecycleListener).onCdbCallFailed(cdbRequest, exception)
     verify(bidLifecycleListener, never()).onBidConsumed(any(), any())
     verify(bidLifecycleListener).onCdbCallFailed(cdbRequest, exception)
+  }
+
+  @Test
+  fun onBidResponse_givenConsentGiven_ThenUpdateConsentDataAccordingly() {
+    whenever(cdbResponse.consentGiven).thenReturn(true)
+
+    liveCdbCallListener.onCdbResponse(cdbRequest, cdbResponse)
+
+    verify(consentData).setConsentGiven(true)
+  }
+
+  @Test
+  fun onBidResponse_givenConsentNotGiven_ThenUpdateConsentDataAccordingly() {
+    whenever(cdbResponse.consentGiven).thenReturn(false)
+
+    liveCdbCallListener.onCdbResponse(cdbRequest, cdbResponse)
+
+    verify(consentData).setConsentGiven(false)
+  }
+
+  @Test
+  fun onBidResponse_givenConsentNull_ThenDontUpdateConsentData() {
+    whenever(cdbResponse.consentGiven).thenReturn(null)
+
+    liveCdbCallListener.onCdbResponse(cdbRequest, cdbResponse)
+
+    verify(consentData, never()).setConsentGiven(any())
   }
 }

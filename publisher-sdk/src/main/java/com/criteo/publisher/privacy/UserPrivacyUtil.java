@@ -16,13 +16,13 @@
 
 package com.criteo.publisher.privacy;
 
-import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.preference.PreferenceManager;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.privacy.gdpr.GdprData;
 import com.criteo.publisher.privacy.gdpr.GdprDataFetcher;
 import com.criteo.publisher.util.SafeSharedPreferences;
@@ -41,9 +41,6 @@ public class UserPrivacyUtil {
   private static final List<String> IAB_USPRIVACY_WITH_CONSENT = Arrays
       .asList("1ynn", "1yny", "1---", "", "1yn-", "1-n-");
 
-  private static final List<String> MOPUB_CONSENT_DECLINED_STRINGS = Arrays
-      .asList("explicit_no", "potential_whitelist", "dnt");
-
   // Key provided by the IAB CCPA Compliance Framework
   @VisibleForTesting
   static final String IAB_USPRIVACY_SHARED_PREFS_KEY = "IABUSPrivacy_String";
@@ -52,8 +49,7 @@ public class UserPrivacyUtil {
   @VisibleForTesting
   static final String OPTOUT_USPRIVACY_SHARED_PREFS_KEY = "USPrivacy_Optout";
 
-  @VisibleForTesting
-  static final String MOPUB_CONSENT_SHARED_PREFS_KEY = "MoPubConsent_String";
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   private final SafeSharedPreferences safeSharedPreferences;
 
@@ -61,15 +57,10 @@ public class UserPrivacyUtil {
 
   private final GdprDataFetcher gdprDataFetcher;
 
-  public UserPrivacyUtil(@NonNull Context context) {
-    this(
-        PreferenceManager.getDefaultSharedPreferences(context),
-        new GdprDataFetcher(context)
-    );
-  }
+  @Nullable
+  private Boolean tagForChildDirectedTreatment = null;
 
-  @VisibleForTesting
-  UserPrivacyUtil(
+  public UserPrivacyUtil(
       @NonNull SharedPreferences sharedPreferences,
       @NonNull GdprDataFetcher gdprDataFetcher
   ) {
@@ -83,6 +74,15 @@ public class UserPrivacyUtil {
     return gdprDataFetcher.fetch();
   }
 
+  @Nullable
+  public String getGdprConsentData() {
+    GdprData gdprData = gdprDataFetcher.fetch();
+    if (gdprData == null) {
+      return null;
+    }
+    return gdprData.getConsentData();
+  }
+
   @NonNull
   public String getIabUsPrivacyString() {
     return safeSharedPreferences.getString(IAB_USPRIVACY_SHARED_PREFS_KEY, "");
@@ -92,6 +92,7 @@ public class UserPrivacyUtil {
     Editor edit = sharedPreferences.edit();
     edit.putString(OPTOUT_USPRIVACY_SHARED_PREFS_KEY, String.valueOf(uspOptout));
     edit.apply();
+    logger.log(PrivacyLogMessage.onUsPrivacyOptOutSet(uspOptout));
   }
 
   @NonNull
@@ -121,6 +122,20 @@ public class UserPrivacyUtil {
     return isIABConsentGiven();
   }
 
+  /**
+   * Children’s Online Privacy Protection Act (“COPPA”) flag
+   *
+   * @return tag set for COPPA or {@code null} if it was never set
+   */
+  @Nullable
+  public Boolean getTagForChildDirectedTreatment() {
+    return tagForChildDirectedTreatment;
+  }
+
+  public void storeTagForChildDirectedTreatment(@Nullable Boolean flag) {
+    tagForChildDirectedTreatment = flag;
+  }
+
   private boolean isBinaryConsentGiven() {
     String usPrivacyOptout = getUsPrivacyOptout();
     return !Boolean.parseBoolean(usPrivacyOptout);
@@ -131,21 +146,5 @@ public class UserPrivacyUtil {
 
     return !IAB_USPRIVACY_PATTERN.matcher(iabUsPrivacy).matches() ||
         IAB_USPRIVACY_WITH_CONSENT.contains(iabUsPrivacy.toLowerCase(Locale.ROOT));
-  }
-
-  public boolean isMopubConsentGivenOrNotApplicable() {
-    String mopubConsent = getMopubConsent();
-    return !MOPUB_CONSENT_DECLINED_STRINGS.contains(mopubConsent.toLowerCase(Locale.ROOT));
-  }
-
-  public void storeMopubConsent(@Nullable String mopubConsent) {
-    Editor edit = sharedPreferences.edit();
-    edit.putString(MOPUB_CONSENT_SHARED_PREFS_KEY, mopubConsent);
-    edit.apply();
-  }
-
-  @NonNull
-  public String getMopubConsent() {
-    return safeSharedPreferences.getString(MOPUB_CONSENT_SHARED_PREFS_KEY, "");
   }
 }

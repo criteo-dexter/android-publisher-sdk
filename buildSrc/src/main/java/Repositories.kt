@@ -14,7 +14,7 @@
  *    limitations under the License.
  */
 
-import com.jfrog.bintray.gradle.BintrayExtension
+import io.github.gradlenexus.publishplugin.NexusPublishExtension
 import org.gradle.api.Project
 import org.gradle.api.artifacts.dsl.RepositoryHandler
 import org.gradle.api.initialization.dsl.ScriptHandler
@@ -30,9 +30,12 @@ fun ScriptHandler.addDefaultInputRepository() {
 
 internal fun RepositoryHandler.addDefaultInputRepository() {
   google()
-  jcenter()
+  mavenCentral()
   maven {
     setUrl("https://jitpack.io")
+  }
+  maven {
+    setUrl("https://oss.sonatype.org/content/repositories/snapshots/")
   }
 }
 
@@ -54,32 +57,13 @@ internal fun Project.addDevRepository() {
   }
 }
 
-fun Project.addBintrayRepository(configure: BintrayExtension.() -> Unit = {}) {
-  the<BintrayExtension>().apply {
-    user = System.getenv("BINTRAY_USER")
-    key = System.getenv("BINTRAY_KEY")
-    publish = true
-
-    with(pkg) {
-      repo = "mobile"
-      userOrg = "criteo"
-      name = "publisher-sdk"
-      desc = Publications.sdkDescription
-      websiteUrl = Publications.website
-      vcsUrl = Publications.githubUrl
-      setLicenses("Apache-2.0")
-      publicDownloadNumbers = true
-
-      with(version) {
-        name = sdkPublicationVersion()
+fun Project.addSonatypeOutputRepository() {
+  the<NexusPublishExtension>().apply {
+    repositories {
+      sonatype {
+        username.set("criteo-oss")
+        password.set(System.getenv("SONATYPE_PASSWORD"))
       }
     }
-
-    afterEvaluate {
-      val publicationNames = publishing.publications.map { it.name }.toTypedArray()
-      setPublications(*publicationNames)
-    }
-
-    configure(this)
   }
 }

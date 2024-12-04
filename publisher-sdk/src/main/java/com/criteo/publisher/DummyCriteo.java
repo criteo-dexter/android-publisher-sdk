@@ -21,6 +21,8 @@ import static com.criteo.publisher.util.CompletableFuture.completedFuture;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.criteo.publisher.concurrent.RunOnUiThreadExecutor;
+import com.criteo.publisher.context.ContextData;
+import com.criteo.publisher.context.UserData;
 import com.criteo.publisher.interstitial.InterstitialActivityHelper;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.Config;
@@ -36,13 +38,18 @@ public class DummyCriteo extends Criteo {
   }
 
   @Override
-  void getBidForAdUnit(@Nullable AdUnit adUnit, @NonNull BidListener bidListener) {
+  void getBidForAdUnit(
+      @Nullable AdUnit adUnit,
+      @NonNull ContextData contextData,
+      @NonNull BidListener bidListener
+  ) {
     bidListener.onNoBid();
   }
 
   @Override
   public void loadBid(
       @NonNull AdUnit adUnit,
+      @NonNull ContextData contextData,
       @NonNull BidResponseListener bidResponseListener
   ) {
     bidResponseListener.onResponse(null);
@@ -68,7 +75,7 @@ public class DummyCriteo extends Criteo {
 
   @NonNull
   @Override
-  public CriteoBannerEventController createBannerController(@NonNull CriteoBannerView bannerView) {
+  public CriteoBannerEventController createBannerController(@NonNull CriteoBannerAdWebView bannerView) {
     return new CriteoBannerEventController(
         bannerView,
         this,
@@ -83,7 +90,12 @@ public class DummyCriteo extends Criteo {
   }
 
   @Override
-  public void setMopubConsent(String mopubConsent) {
+  public void setUserData(@NonNull UserData userData) {
+    // do nothing
+  }
+
+  @Override
+  public void setTagForChildDirectedTreatment(@Nullable Boolean tagForChildDirectedTreatment) {
     // do nothing
   }
 

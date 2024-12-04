@@ -17,13 +17,14 @@
 plugins {
     id("com.android.library")
     `maven-publish`
+    signing
     jacoco
     kotlin("android")
+    kotlin("kapt")
     id("kotlin-allopen")
-    id("com.vanniktech.dependency.graph.generator") version "0.5.0"
+    id("com.vanniktech.dependency.graph.generator") version "0.8.0"
     id("com.vanniktech.android.javadoc") version "0.3.0"
     id("fr.pturpin.slack-publish")
-    id("com.jfrog.bintray")
     id("io.gitlab.arturbosch.detekt")
     id("com.banno.gordon")
 }
@@ -34,7 +35,7 @@ allOpen {
     annotation("com.criteo.publisher.annotation.OpenForTesting")
 }
 
-androidLibModule() {
+androidLibModule {
     // Network
     addBuildConfigField<String>("cdbUrl")
     addBuildConfigField<String>("eventUrl")
@@ -46,25 +47,27 @@ androidLibModule() {
     addBuildConfigField<Int>("csmBatchSize")
     addBuildConfigField<Int>("maxSizeOfCsmMetricsFolder")
     addBuildConfigField<Int>("maxSizeOfCsmMetricSendingQueue")
+    addBuildConfigField<Int>("estimatedSizeOfCsmMetric")
 
     // Advanced Native
     addBuildConfigField<Int>("adChoiceIconWidthInDp")
     addBuildConfigField<Int>("adChoiceIconHeightInDp")
 
+    // Remote logs
+    addBuildConfigField<Int>("remoteLogBatchSize")
+    addBuildConfigField<String>("remoteLogQueueFilename")
+    addBuildConfigField<Int>("maxSizeOfRemoteLogSendingQueue")
+    addBuildConfigField<Int>("estimatedSizeOfRemoteLog")
+
     // Misc
     addBuildConfigField<String>("pubSdkSharedPreferences")
-    addBuildConfigField<Int>("minLogLevel")
+    addBuildConfigField<Int>("defaultMinLogLevel")
     addBuildConfigField<Boolean>("preconditionThrowsOnException")
 }
 
 android {
     defaultConfig {
         multiDexEnabled = true
-    }
-
-    packagingOptions {
-        // Both AssertJ and ByteBuddy (via Mockito) brings this and the duplication yield an error
-        exclude("META-INF/licenses/ASM")
     }
 
     libraryVariants.all {
@@ -75,8 +78,6 @@ android {
                 addSourcesJar(variantName)
                 addJavadocJar(variantName)
             }
-
-            groupId = "com.criteo.publisher"
 
             artifactId = if (variantName == "release" && isSnapshot()) {
                 "criteo-publisher-sdk-development"
@@ -91,7 +92,6 @@ android {
     }
 }
 
-addBintrayRepository()
 addSlackDeploymentMessages()
 
 configurations.configureEach {
@@ -109,17 +109,16 @@ dependencies {
     implementation(Deps.Square.Tape.Tape)
 
     compileOnly(Deps.Google.AdMob)
+    compileOnly(Deps.Google.AdsIdentifier)
 
-    implementation(Deps.AutoValue.Annotation)
-    annotationProcessor(Deps.AutoValue.AutoValue)
-
-    implementation(Deps.AutoValue.GsonRuntime)
-    annotationProcessor(Deps.AutoValue.GsonExtension)
-
-    // Optional @GsonTypeAdapterFactory support
-    annotationProcessor(Deps.AutoValue.GsonFactory)
+    implementation(Deps.Square.Moshi.Adapter)
+    kapt(Deps.Square.Moshi.Kapt)
 
     implementation(Deps.Square.Picasso.Picasso)
+
+    releaseImplementation(Deps.Criteo.MraidBridge.Release)
+    "stagingImplementation"(Deps.Criteo.MraidBridge.Snapshot)
+    debugImplementation(Deps.Criteo.MraidBridge.Snapshot)
 
     testImplementation(project(":test-utils"))
     testImplementation(Deps.JUnit.JUnit)
@@ -131,6 +130,7 @@ dependencies {
     testImplementation(Deps.Kotlin.JUnit)
     testImplementation(Deps.Mockito.Kotlin)
     testImplementation(Deps.AndroidX.Annotations)
+    kaptTest(Deps.Square.Moshi.Kapt)
 
     androidTestImplementation(project(":test-utils"))
     androidTestImplementation(project(":publisher-sdk-tests"))
@@ -143,8 +143,7 @@ dependencies {
     androidTestImplementation(Deps.Square.Tape.Tape)
     androidTestImplementation(Deps.Square.OkHttp.MockWebServer)
     androidTestImplementation(Deps.Google.AdMob)
-    androidTestImplementation(Deps.MoPub.Banner) { isTransitive = true }
-    androidTestImplementation(Deps.MoPub.Interstitial) { isTransitive = true }
+    androidTestImplementation(Deps.Google.AdsIdentifier)
 
     detektPlugins(Deps.Detekt.DetektFormatting)
 }

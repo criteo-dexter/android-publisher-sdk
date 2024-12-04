@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item type="id" name="adWebViewPlaceholder" />
+    <item type="id" name="adWebViewDialogContainer" />
+    <item type="id" name="adWebViewCloseRegion"/>
+    <item type="id" name="bannerAdWebView" />
+</resources>

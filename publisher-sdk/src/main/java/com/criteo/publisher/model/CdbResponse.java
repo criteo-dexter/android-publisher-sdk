@@ -16,9 +16,10 @@
 
 package com.criteo.publisher.model;
 
-import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import org.json.JSONArray;
@@ -27,25 +28,32 @@ import org.json.JSONObject;
 
 public class CdbResponse {
 
-  private static final String TAG = CdbResponse.class.getSimpleName();
   private static final String TIME_TO_NEXT_CALL = "timeToNextCall";
   private static final String SLOTS = "slots";
+  private static final String CONSENT_GIVEN = "consentGiven";
 
   @NonNull
   private final List<CdbResponseSlot> slots;
 
   private final int timeToNextCall;
 
+  @Nullable
+  private final Boolean consentGiven;
+
   public CdbResponse(
       @NonNull List<CdbResponseSlot> slots,
-      int timeToNextCall
-  ) {
+      int timeToNextCall,
+      @Nullable Boolean consentGiven
+      ) {
     this.slots = slots;
     this.timeToNextCall = timeToNextCall;
+    this.consentGiven = consentGiven;
   }
 
   @NonNull
   public static CdbResponse fromJson(@NonNull JSONObject json) {
+    Logger logger = LoggerFactory.getLogger(CdbResponse.class);
+
     int timeToNextCall = 0;
     List<CdbResponseSlot> slots = new ArrayList<>();
 
@@ -53,7 +61,7 @@ public class CdbResponse {
       try {
         timeToNextCall = json.getInt(TIME_TO_NEXT_CALL);
       } catch (JSONException ex) {
-        Log.d(TAG, "Exception while reading cdb time to next call" + ex.getMessage());
+        logger.debug("Exception while reading cdb time to next call" + ex.getMessage());
       }
     }
 
@@ -62,19 +70,28 @@ public class CdbResponse {
       try {
         array = json.getJSONArray(SLOTS);
       } catch (JSONException ex) {
-        Log.d(TAG, "Exception while reading slots array" + ex.getMessage());
+        logger.debug("Exception while reading slots array", ex);
       }
       for (int i = 0; i < array.length(); i++) {
         try {
           JSONObject slotStr = array.getJSONObject(i);
           slots.add(CdbResponseSlot.fromJson(slotStr));
         } catch (Exception ex) {
-          Log.d(TAG, "Exception while reading slot from slots array" + ex.getMessage());
+          logger.debug("Exception while reading slot from slots array", ex);
         }
       }
     }
 
-    return new CdbResponse(slots, timeToNextCall);
+    Boolean consentGiven = null;
+    if (json.has(CONSENT_GIVEN)) {
+      try {
+        consentGiven = json.getBoolean(CONSENT_GIVEN);
+      } catch (JSONException ex) {
+        logger.debug("Exception while reading consentGiven", ex);
+      }
+    }
+
+    return new CdbResponse(slots, timeToNextCall, consentGiven);
   }
 
   @NonNull
@@ -85,6 +102,9 @@ public class CdbResponse {
   public int getTimeToNextCall() {
     return timeToNextCall;
   }
+
+  @Nullable
+  public Boolean getConsentGiven() { return consentGiven; }
 
   @Nullable
   public CdbResponseSlot getSlotByImpressionId(@NonNull String impressionId) {
@@ -102,6 +122,7 @@ public class CdbResponse {
     return "CdbResponse{" +
         "slots=" + slots +
         ", timeToNextCall=" + timeToNextCall +
+        ", consentGiven = " + consentGiven +
         '}';
   }
 }

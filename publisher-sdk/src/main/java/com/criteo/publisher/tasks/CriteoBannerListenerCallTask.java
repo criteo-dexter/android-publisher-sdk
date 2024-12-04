@@ -22,9 +22,14 @@ import com.criteo.publisher.CriteoBannerAdListener;
 import com.criteo.publisher.CriteoBannerView;
 import com.criteo.publisher.CriteoErrorCode;
 import com.criteo.publisher.CriteoListenerCode;
+import com.criteo.publisher.BannerLogMessage;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import java.lang.ref.Reference;
 
 public class CriteoBannerListenerCallTask implements Runnable {
+
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   @Nullable
   private final CriteoBannerAdListener listener;
@@ -51,7 +56,16 @@ public class CriteoBannerListenerCallTask implements Runnable {
 
   @Override
   public void run() {
-    if (listener == null) {
+    CriteoBannerView bannerView = bannerViewRef.get();
+
+    if (code == CriteoListenerCode.INVALID) {
+      logger.log(BannerLogMessage.onBannerViewFailedToLoad(bannerView));
+    } else if (code == CriteoListenerCode.VALID) {
+      logger.log(BannerLogMessage.onBannerViewLoaded(bannerView));
+    }
+
+    // If banner is null, it means that publisher released it.
+    if (listener == null || bannerView == null) {
       return;
     }
 
@@ -60,15 +74,11 @@ public class CriteoBannerListenerCallTask implements Runnable {
         listener.onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
         break;
       case VALID:
-        listener.onAdReceived(bannerViewRef.get());
+        listener.onAdReceived(bannerView);
         break;
       case CLICK:
         listener.onAdClicked();
         listener.onAdLeftApplication();
-        listener.onAdOpened();
-        break;
-      case CLOSE:
-        listener.onAdClosed();
         break;
     }
   }

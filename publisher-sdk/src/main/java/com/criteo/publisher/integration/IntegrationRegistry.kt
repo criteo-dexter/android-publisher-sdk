@@ -17,9 +17,13 @@
 package com.criteo.publisher.integration
 
 import android.content.SharedPreferences
-import androidx.annotation.VisibleForTesting
 import com.criteo.publisher.annotation.OpenForTesting
-import com.criteo.publisher.util.PreconditionsUtil
+import com.criteo.publisher.integration.IntegrationLogMessage.onDeclaredIntegrationRead
+import com.criteo.publisher.integration.IntegrationLogMessage.onIntegrationDeclared
+import com.criteo.publisher.integration.IntegrationLogMessage.onMediationAdapterDetected
+import com.criteo.publisher.integration.IntegrationLogMessage.onNoDeclaredIntegration
+import com.criteo.publisher.integration.IntegrationLogMessage.onUnknownIntegrationName
+import com.criteo.publisher.logging.LoggerFactory
 import com.criteo.publisher.util.SafeSharedPreferences
 
 @OpenForTesting
@@ -29,6 +33,7 @@ class IntegrationRegistry(
 ) {
 
   private val safeSharedPreferences = SafeSharedPreferences(sharedPreferences)
+  private val logger = LoggerFactory.getLogger(javaClass)
 
   /**
    * Profile ID used by the SDK, so CDB and the Supply chain can recognize that the request comes
@@ -38,12 +43,14 @@ class IntegrationRegistry(
     get() = readIntegration().profileId
 
   fun declare(integration: Integration) {
+    logger.log(onIntegrationDeclared(integration))
+
     sharedPreferences.edit()
         .putString(IntegrationStorageKey, integration.name)
         .apply()
   }
 
-  @VisibleForTesting
+  @Suppress("SwallowedException") // Exception is not really swallowed as the issue get logged
   fun readIntegration(): Integration {
     detectMediationIntegration()?.let {
       return it
@@ -51,26 +58,29 @@ class IntegrationRegistry(
 
     val integrationName = safeSharedPreferences.getString(
         IntegrationStorageKey,
-        Integration.FALLBACK.name
-    )!!
+        null
+    )
 
-    return try {
-      Integration.valueOf(integrationName)
-    } catch (e: IllegalArgumentException) {
-      PreconditionsUtil.throwOrLog(e)
+    return if (integrationName == null) {
+      logger.log(onNoDeclaredIntegration())
       Integration.FALLBACK
+    } else {
+      try {
+        val integration = Integration.valueOf(integrationName)
+        logger.log(onDeclaredIntegrationRead(integration))
+        integration
+      } catch (e: IllegalArgumentException) {
+        logger.log(onUnknownIntegrationName(integrationName))
+        Integration.FALLBACK
+      }
     }
   }
 
   private fun detectMediationIntegration(): Integration? {
-    val moPubMediationPresent = integrationDetector.isMoPubMediationPresent()
     val adMobMediationPresent = integrationDetector.isAdMobMediationPresent()
 
-    return if (moPubMediationPresent && adMobMediationPresent) {
-      Integration.FALLBACK
-    } else if (moPubMediationPresent) {
-      Integration.MOPUB_MEDIATION
-    } else if (adMobMediationPresent) {
+    return if (adMobMediationPresent) {
+      logger.log(onMediationAdapterDetected("AdMob"))
       Integration.ADMOB_MEDIATION
     } else {
       null

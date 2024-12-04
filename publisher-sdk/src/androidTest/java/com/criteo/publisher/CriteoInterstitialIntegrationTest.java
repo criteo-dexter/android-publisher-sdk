@@ -30,6 +30,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import com.criteo.publisher.context.ContextData;
 import com.criteo.publisher.mock.MockedDependenciesRule;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.InterstitialAdUnit;
@@ -38,12 +39,16 @@ import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Answers;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.MockitoJUnit;
+import org.mockito.junit.MockitoRule;
 
 public class CriteoInterstitialIntegrationTest {
 
   @Rule
   public MockedDependenciesRule mockedDependenciesRule = new MockedDependenciesRule();
+
+  @Rule
+  public MockitoRule mockitoRule = MockitoJUnit.rule();
 
   @Mock
   private CriteoInterstitialAdListener listener;
@@ -56,8 +61,6 @@ public class CriteoInterstitialIntegrationTest {
 
   @Before
   public void setup() throws CriteoInitException {
-    MockitoAnnotations.initMocks(this);
-
     givenInitializedCriteo(interstitialAdUnit);
 
     interstitial = createInterstitial();
@@ -83,20 +86,21 @@ public class CriteoInterstitialIntegrationTest {
   @Test
   public void loadAdForStandaloneTwice_GivenOnlyNoBid_ShouldNotifyListenerTwiceForFailure()
       throws Exception {
+    ContextData contextData = mock(ContextData.class);
     CriteoInterstitialAdListener listener = mock(CriteoInterstitialAdListener.class);
 
     criteo = mock(Criteo.class, Answers.RETURNS_DEEP_STUBS);
-    givenMockedNoBidResponse(interstitialAdUnit);
+    givenMockedNoBidResponse(interstitialAdUnit, contextData);
 
     when(criteo.getDeviceInfo().getUserAgent()).thenReturn(completedFuture(""));
 
     CriteoInterstitial interstitial = createInterstitial();
     interstitial.setCriteoInterstitialAdListener(listener);
 
-    runOnMainThreadAndWait(interstitial::loadAd);
+    runOnMainThreadAndWait(() -> interstitial.loadAd(new ContextData()));
     waitForIdleState();
 
-    runOnMainThreadAndWait(interstitial::loadAd);
+    runOnMainThreadAndWait(() -> interstitial.loadAd(new ContextData()));
     waitForIdleState();
 
     verify(listener, times(2)).onAdFailedToReceive(CriteoErrorCode.ERROR_CODE_NO_FILL);
@@ -120,10 +124,10 @@ public class CriteoInterstitialIntegrationTest {
   }
 
 
-  private void givenMockedNoBidResponse(AdUnit adUnit) {
+  private void givenMockedNoBidResponse(AdUnit adUnit, ContextData contextData) {
     doAnswer(answerVoid((AdUnit ignored, BidListener bidListener) -> bidListener
         .onNoBid()))
         .when(criteo)
-        .getBidForAdUnit(eq(adUnit), any(BidListener.class));
+        .getBidForAdUnit(eq(adUnit), eq(contextData), any(BidListener.class));
   }
 }

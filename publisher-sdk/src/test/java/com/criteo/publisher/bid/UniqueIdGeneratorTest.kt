@@ -17,10 +17,10 @@
 package com.criteo.publisher.bid
 
 import com.criteo.publisher.EpochClock
-import com.nhaarman.mockitokotlin2.mock
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Test
-import java.util.*
+import org.mockito.kotlin.mock
+import java.util.UUID
 
 class UniqueIdGeneratorTest {
 
@@ -36,7 +36,7 @@ class UniqueIdGeneratorTest {
     val generator = UniqueIdGenerator(mock())
     val id = generator.generateId(uuid, timestamp)
 
-    assertThat(id).isEqualTo("499602d2ce73cc4267a133c2fff509e4");
+    assertThat(id).isEqualTo("499602d2ce73cc4267a133c2fff509e4")
   }
 
   @Test
@@ -53,5 +53,4 @@ class UniqueIdGeneratorTest {
       assertThat(ids).hasSize(expectedSize)
     }
   }
-
 }

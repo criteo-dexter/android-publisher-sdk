@@ -18,29 +18,33 @@ package com.criteo.publisher.mock;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
 
-import android.app.Application;
 import android.os.Build.VERSION_CODES;
+import android.os.Debug;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import com.criteo.publisher.CriteoUtil;
 import com.criteo.publisher.DependencyProvider;
 import com.criteo.publisher.MockableDependencyProvider;
-import com.criteo.publisher.concurrent.ThreadingUtil;
-import com.criteo.publisher.concurrent.TrackingCommandsExecutor;
+import com.criteo.publisher.SharedPreferencesResource;
+import com.criteo.publisher.application.ApplicationResource;
+import com.criteo.publisher.application.InstrumentationUtil;
+import com.criteo.publisher.concurrent.MultiThreadResource;
+import com.criteo.publisher.concurrent.UncaughtThreadResource;
+import com.criteo.publisher.csm.ConcurrentSendingQueueHelper;
 import com.criteo.publisher.csm.MetricHelper;
 import com.criteo.publisher.logging.Logger;
 import com.criteo.publisher.logging.LoggerFactory;
+import com.criteo.publisher.logging.SpyLoggerResource;
+import com.criteo.publisher.mock.TestResource.CompositeTestResource;
 import com.criteo.publisher.model.CdbResponse;
+import com.criteo.publisher.network.CdbMockResource;
 import com.criteo.publisher.network.PubSdkApi;
-import com.criteo.publisher.util.BuildConfigWrapper;
-import com.criteo.publisher.util.InstrumentationUtil;
-import java.util.concurrent.Executor;
+import com.criteo.publisher.util.MockedAdvertiserIdClientResource;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.internal.runners.statements.FailOnTimeout;
 import org.junit.rules.MethodRule;
@@ -55,19 +59,18 @@ public class MockedDependenciesRule implements MethodRule {
   /**
    * Apply a timeout on all tests using this rule.
    * <p>
-   * Lot of tests are waiting for end of AsyncTasks or for third-parties' events. Those tests may be
-   * stuck and block the overall execution. In order to avoid any infinite blocking, long tests will
-   * be killed by this timeout rule.
+   * Lot of tests are waiting for the end of AsyncTasks or for third-parties' events. Those tests may be stuck and block
+   * the overall execution. In order to avoid any infinite blocking, long tests will be killed by this timeout rule.
    * <p>
    * This timeout duration is roughly set and may have to be updated in the future.
    * <p>
-   * Warning: When debugging, this timeout may interrupt your work and be annoying. To deactivate
-   * it, you may set the {@link #iAmDebuggingDoNotTimeoutMe} variable to <code>true</code>.
+   * Warning: When debugging, this timeout is deactivated to not interrupt your work. To activate it, you may set the
+   * {@link #iAmDebuggingDoNotTimeoutMe} variable to <code>false</code>.
    */
   private final FailOnTimeout.Builder timeout = FailOnTimeout.builder()
       .withTimeout(60, TimeUnit.SECONDS);
 
-  private final boolean iAmDebuggingDoNotTimeoutMe = false; // Do not commit this set to true
+  private final boolean iAmDebuggingDoNotTimeoutMe = Debug.isDebuggerConnected();
 
   /**
    * If set to <code>true</code>, then a CDB mock server is instantiated and started before each
@@ -76,44 +79,97 @@ public class MockedDependenciesRule implements MethodRule {
    * This server answers like the preprod of CDB, except that it works only for Ad Units defined in
    * {@link com.criteo.publisher.TestAdUnits}.
    */
-  @SuppressWarnings("FieldCanBeLocal")
-  private final boolean injectCdbMockServer = true;
+  private boolean injectCdbMockServer = true;
+
+  private boolean injectSpiedLogger = false;
+
+  private boolean injectMockedAdvertisingIdClient = true;
+
+  @NonNull
+  private final DependencyProviderRef dependencyProviderRef;
 
   @Nullable
-  private Logger mockedLogger = null;
-  private boolean injectMockedLogger = false;
-  private TrackingCommandsExecutor trackingCommandsExecutor;
-
-  protected DependencyProvider dependencyProvider;
-  private Object target;
+  private Object testInstance;
 
   @Nullable
-  private CdbMock cdbMock;
+  private MultiThreadResource multiThreadResource;
 
-  /**
-   * Activate mocking of {@link Logger}.
-   * <p>
-   * All loggers created through the {@link LoggerFactory} are mocked and represented by a single
-   * instance given by {@link #getMockedLogger()}.
-   * <p>
-   * Note that this option should be used when creating the {@link org.junit.Rule}.
-   *
-   * @return this for chaining calls
-   */
-  public MockedDependenciesRule withMockedLogger() {
-    injectMockedLogger = true;
-    return this;
+  @Nullable
+  private TestResource inMemoryResource;
+
+  public MockedDependenciesRule() {
+    this.dependencyProviderRef = new DependencyProviderRef();
+  }
+
+  @NonNull
+  private TestResource getInMemoryResource() {
+    if (inMemoryResource == null) {
+      // Order of creation is important: resources are setUp in this order before every test and tearDown in the reverse
+      // order after.
+      // Tests are isolated to remove side effect. Some code use the dependency provider singleton: so if a previous
+      // test is still living, it can use a dependency provider of a new test and provide unexpected side effect.
+      //
+      // So setUp is:
+      // - dependency provider singleton is injected
+      // - threads are managed
+      // - Application singleton is registered in dependency provider
+      // - order of CDB mock and logger is not important
+      //
+      // Then tearDown is:
+      // - order of CDB mock and logger is not important
+      // - Application singleton is cleaned
+      // - threads are synchronized to get an idle state
+      // - dependency provider singleton is cleaned
+      // - internal state is cleaned
+
+      List<TestResource> resources = new ArrayList<>();
+      resources.add(new DependencyProviderResource(dependencyProviderRef));
+      resources.add(getMultiThreadResource());
+      resources.add(new ApplicationResource(dependencyProviderRef));
+      resources.add(new SharedPreferencesResource(dependencyProviderRef));
+
+      if (InstrumentationUtil.isRunningInInstrumentationTest()) {
+        // Only add this on instrumentation test because when running unit test, Android API are returning null
+        // and so NPE are thrown for no real reason.
+        // Also unit tests are more focused and less hard to debug than instrumentation tests. On the other hand,
+        // instrumentation tests are really hard to debug and need such help when debugging.
+        resources.add(new UncaughtThreadResource());
+      }
+
+      if (injectCdbMockServer) {
+        resources.add(new CdbMockResource(dependencyProviderRef));
+      }
+
+      if (injectSpiedLogger) {
+        resources.add(new SpyLoggerResource(dependencyProviderRef));
+      }
+
+      if (injectMockedAdvertisingIdClient) {
+        resources.add(new MockedAdvertiserIdClientResource(dependencyProviderRef));
+      }
+
+      inMemoryResource = new CompositeTestResource(resources);
+    }
+    return inMemoryResource;
+  }
+
+  private MultiThreadResource getMultiThreadResource() {
+    if (multiThreadResource == null) {
+       multiThreadResource = new MultiThreadResource(dependencyProviderRef);
+    }
+    return multiThreadResource;
   }
 
   @Override
   public Statement apply(Statement base, FrameworkMethod method, Object target) {
-    this.target = target;
-
     return new Statement() {
       @RequiresApi(api = VERSION_CODES.O)
       @Override
       public void evaluate() throws Throwable {
+        Throwable throwable = null;
         try {
+          testInstance = target;
+
           resetAllDependencies();
           resetAllPersistedData();
 
@@ -122,90 +178,84 @@ public class MockedDependenciesRule implements MethodRule {
           } else {
             timeout.build(base).evaluate();
           }
+        } catch (Throwable t) {
+          throwable = t;
         } finally {
-          resetAllPersistedData();
-
-          // clean after self and ensures no side effects for subsequent tests
-          MockableDependencyProvider.setInstance(null);
-
-          if (cdbMock != null) {
-            cdbMock.shutdown();
+          try {
+            resetAllPersistedData();
+            getInMemoryResource().tearDown();
+          } catch (Throwable t) {
+            if (throwable != null) {
+              throwable.addSuppressed(t);
+            } else {
+              throwable = t;
+            }
           }
+        }
 
-          mockedLogger = null;
+        if (throwable != null) {
+          throw throwable;
         }
       }
     };
   }
 
-  private void setUpDependencyProvider() {
-    DependencyProvider originalDependencyProvider = DependencyProvider.getInstance();
-
-    Application application = InstrumentationUtil.getApplication();
-    originalDependencyProvider.setApplication(application);
-    originalDependencyProvider.setCriteoPublisherId(CriteoUtil.TEST_CP_ID);
-
-    Executor oldExecutor = originalDependencyProvider.provideThreadPoolExecutor();
-
-    trackingCommandsExecutor = new TrackingCommandsExecutor(oldExecutor);
-    dependencyProvider = spy(originalDependencyProvider);
-    MockableDependencyProvider.setInstance(dependencyProvider);
-    doReturn(trackingCommandsExecutor).when(dependencyProvider).provideThreadPoolExecutor();
-    doReturn(trackingCommandsExecutor.asAsyncResources()).when(dependencyProvider)
-        .provideAsyncResources();
+  protected TestDependencyProvider createDependencyProvider() {
+    return new TestDependencyProvider();
   }
 
-  private void setUpCdbMock() {
-    if (!injectCdbMockServer) {
-      return;
-    }
-
-    cdbMock = new CdbMock(dependencyProvider.provideJsonSerializer());
-    cdbMock.start();
-
-    BuildConfigWrapper buildConfigWrapper = spy(dependencyProvider.provideBuildConfigWrapper());
-    when(buildConfigWrapper.getCdbUrl()).thenReturn(cdbMock.getUrl());
-    when(buildConfigWrapper.getEventUrl()).thenReturn(cdbMock.getUrl());
-    when(dependencyProvider.provideBuildConfigWrapper()).thenReturn(buildConfigWrapper);
+  /**
+   * Activate spying of {@link Logger}.
+   * <p>
+   * All loggers created through the {@link LoggerFactory} are spied and represented by a single
+   * instance given by {@link TestDependencyProvider#provideLogger()}. You can obtain it via annotation injection (see
+   * {@link DependenciesAnnotationInjection}).
+   * <p>
+   * Note that this option should be used when creating the {@link org.junit.Rule}.
+   *
+   * @return this for chaining calls
+   */
+  public MockedDependenciesRule withSpiedLogger() {
+    injectSpiedLogger = true;
+    clearInternalState();
+    return this;
   }
 
-  @Nullable
-  public Logger getMockedLogger() {
-    return mockedLogger;
+  /**
+   * Deactivate the mock of the AdvertiserIdClient
+   *
+   * By default, this client is mocked during test because Google Play Service might be slow and fail sometimes because
+   * of IOException.
+   *
+   * For tests that particularly tests this feature, then the mock can be deactivated.
+   *
+   * @return this for chaining calls
+   */
+  public MockedDependenciesRule withoutMockedAdvertiserIdClient() {
+    injectMockedAdvertisingIdClient = false;
+    clearInternalState();
+    return this;
   }
 
-  private void setUpMockedLogger() {
-    if (!injectMockedLogger) {
-      return;
-    }
-
-    mockedLogger = mock(Logger.class);
-
-    LoggerFactory loggerFactory = spy(dependencyProvider.provideLoggerFactory());
-    doReturn(mockedLogger).when(loggerFactory).createLogger(any());
-    when(dependencyProvider.provideLoggerFactory()).thenReturn(loggerFactory);
-  }
-
-  @RequiresApi(api = VERSION_CODES.O)
-  private void injectDependencies() {
-    DependenciesAnnotationInjection injection = new DependenciesAnnotationInjection(
-        dependencyProvider);
-    injection.process(target);
+  public MockedDependenciesRule withoutCdbMock() {
+    injectCdbMockServer = false;
+    clearInternalState();
+    return this;
   }
 
   public DependencyProvider getDependencyProvider() {
-    return dependencyProvider;
+    return dependencyProviderRef.get();
   }
 
-  @RequiresApi(api = VERSION_CODES.M)
-  public void waitForIdleState() {
-    ThreadingUtil.waitForAllThreads(trackingCommandsExecutor);
-  }
-
+  /**
+   * Setup a {@link ResultCaptor} to captur CDB response.
+   *
+   * The {@link PubSdkApi} in this {@link #getDependencyProvider() dependency provider} should already be a mock or a
+   * spy.
+   */
   public ResultCaptor<CdbResponse> captorCdbResult() {
     ResultCaptor<CdbResponse> captor = new ResultCaptor<>();
-    PubSdkApi spyApi = spy(getDependencyProvider().providePubSdkApi());
-    doReturn(spyApi).when(getDependencyProvider()).providePubSdkApi();
+    PubSdkApi spyApi = getDependencyProvider().providePubSdkApi();
 
     try {
       doAnswer(captor).when(spyApi).loadCdb(any(), any());
@@ -216,12 +266,9 @@ public class MockedDependenciesRule implements MethodRule {
     return captor;
   }
 
-  @NonNull
-  public CdbMock getCdbMock() {
-    if (cdbMock == null) {
-      throw new IllegalStateException("CDB mock is only available while test is running");
-    }
-    return cdbMock;
+  @RequiresApi(api = VERSION_CODES.M)
+  public void waitForIdleState() {
+    getMultiThreadResource().waitForIdleState();
   }
 
   /**
@@ -237,25 +284,58 @@ public class MockedDependenciesRule implements MethodRule {
    */
   @RequiresApi(api = VERSION_CODES.O)
   public void resetAllDependencies() {
-    MockableDependencyProvider.setInstance(null);
-    CriteoUtil.clearCriteo();
+    getInMemoryResource().tearDown();
 
-    if (cdbMock != null) {
-      cdbMock.shutdown();
-    }
-
-    setUpDependencyProvider();
-    setUpCdbMock();
-    setUpMockedLogger();
-    injectDependencies();
+    getInMemoryResource().setUp();
+    setUpInjectedDependencies();
   }
 
-  @RequiresApi(api = VERSION_CODES.JELLY_BEAN_MR1)
+  @RequiresApi(api = VERSION_CODES.O)
+  private void setUpInjectedDependencies() {
+    assert testInstance != null;
+    DependenciesAnnotationInjection injection = new DependenciesAnnotationInjection(dependencyProviderRef.get());
+    injection.process(testInstance);
+  }
+
   private void resetAllPersistedData() {
+    DependencyProvider dependencyProvider = dependencyProviderRef.get();
+
     // Clear all states retained in shared preferences used by the SDK.
-    dependencyProvider.provideSharedPreferences().edit().clear().apply();
+    dependencyProvider.provideSharedPreferencesFactory().getInternal().edit().clear().apply();
+    dependencyProvider.provideSharedPreferencesFactory().getApplication().edit().clear().apply();
 
     // Clear CSM
     MetricHelper.cleanState(dependencyProvider);
+    ConcurrentSendingQueueHelper.emptyQueue(dependencyProvider.provideRemoteLogSendingQueue());
   }
+
+  private void clearInternalState() {
+    multiThreadResource = null;
+    inMemoryResource = null;
+  }
+
+  private class DependencyProviderResource implements TestResource {
+
+    @NonNull
+    private final DependencyProviderRef dependencyProviderRef;
+
+    private DependencyProviderResource(@NonNull DependencyProviderRef dependencyProviderRef) {
+      this.dependencyProviderRef = dependencyProviderRef;
+    }
+
+    @Override
+    public void setUp() {
+      TestDependencyProvider dependencyProvider = spy(createDependencyProvider());
+      MockableDependencyProvider.setInstance(dependencyProvider);
+      dependencyProviderRef.set(dependencyProvider);
+    }
+
+    @Override
+    public void tearDown() {
+      CriteoUtil.clearCriteo();
+      MockableDependencyProvider.setInstance(null);
+      dependencyProviderRef.clear();
+    }
+  }
+
 }

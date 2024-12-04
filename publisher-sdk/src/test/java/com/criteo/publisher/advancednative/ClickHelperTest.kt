@@ -21,14 +21,25 @@ import com.criteo.publisher.activity.TopActivityFinder
 import com.criteo.publisher.adview.Redirection
 import com.criteo.publisher.adview.RedirectionListener
 import com.criteo.publisher.concurrent.DirectMockRunOnUiThreadExecutor
-import com.nhaarman.mockitokotlin2.*
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.mockito.Mock
-import org.mockito.MockitoAnnotations
+import org.mockito.junit.MockitoJUnit
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.stub
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.verifyNoInteractions
 import java.net.URI
 
 class ClickHelperTest {
+
+  @Rule
+  @JvmField
+  val mockitoRule = MockitoJUnit.rule()
 
   @Mock
   private lateinit var redirection: Redirection
@@ -42,8 +53,6 @@ class ClickHelperTest {
 
   @Before
   fun setUp() {
-    MockitoAnnotations.initMocks(this)
-
     runOnUiThreadExecutor = spy(DirectMockRunOnUiThreadExecutor())
     clickHelper = ClickHelper(redirection, topActivityFinder, runOnUiThreadExecutor)
   }
@@ -52,7 +61,7 @@ class ClickHelperTest {
   fun notifyUserClick_GivenNull_DoNothing() {
     clickHelper.notifyUserClickAsync(null)
 
-    verifyZeroInteractions(runOnUiThreadExecutor)
+    verifyNoInteractions(runOnUiThreadExecutor)
   }
 
   @Test
@@ -69,7 +78,7 @@ class ClickHelperTest {
   fun notifyUserIsLeavingApplication_GivenNull_DoNothing() {
     clickHelper.notifyUserIsLeavingApplicationAsync(null)
 
-    verifyZeroInteractions(runOnUiThreadExecutor)
+    verifyNoInteractions(runOnUiThreadExecutor)
   }
 
   @Test
@@ -86,7 +95,7 @@ class ClickHelperTest {
   fun notifyUserIsBackToApplication_GivenNull_DoNothing() {
     clickHelper.notifyUserIsBackToApplicationAsync(null)
 
-    verifyZeroInteractions(runOnUiThreadExecutor)
+    verifyNoInteractions(runOnUiThreadExecutor)
   }
 
   @Test
@@ -106,7 +115,7 @@ class ClickHelperTest {
     val activityName = mock<ComponentName>()
 
     topActivityFinder.stub {
-      on { topActivityName } doReturn activityName
+      on { getTopActivityName() } doReturn activityName
     }
 
     clickHelper.redirectUserTo(uri, listener)
@@ -132,5 +141,4 @@ class ClickHelperTest {
       }
     }
   }
-
 }

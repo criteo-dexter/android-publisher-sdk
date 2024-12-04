@@ -17,7 +17,7 @@ pubSdkSharedPreferences = 'com.criteo.publisher.sdkSharedPreferences'
  */
 
 /**
- * Included minimum level of logs to print
+ * Included default minimum level of logs to print
  * Values are from {@link android.util.Log}:
  * <ul>
  *     <li>2 = VERBOSE</li>
@@ -28,7 +28,7 @@ pubSdkSharedPreferences = 'com.criteo.publisher.sdkSharedPreferences'
  *     <li>7 = ASSERT</li>
  * </ul>
  */
-minLogLevel = 5 // Warning
+defaultMinLogLevel = 5 // Warning
 
 /**
  * Indicate if exceptions that could be ignored should be thrown.
@@ -67,6 +67,7 @@ maxSizeOfCsmMetricsFolder = 48 * 1024
 
 // Maximum size (in bytes) of metric elements stored in the metric sending queue.
 // 60KB represents ~360 metrics (with ~170 bytes/metric) which already represent an extreme case.
+estimatedSizeOfCsmMetric = 170
 maxSizeOfCsmMetricSendingQueue = 60 * 1024
 
 /**
@@ -74,6 +75,22 @@ maxSizeOfCsmMetricSendingQueue = 60 * 1024
  */
 adChoiceIconWidthInDp = 19
 adChoiceIconHeightInDp = 15
+
+/**
+ * Remote logs configuration
+ */
+
+// The batch size of logs sent, at most, in each remote logs request.
+// Given below estimation, a request can have a size of 1MB.
+remoteLogBatchSize = 200
+
+// The relative path in application folder of the sending queue file
+remoteLogQueueFilename = 'criteo_remote_logs_queue'
+
+// Maximum size (in bytes) of remote log elements stored in the sending queue.
+// 250KB represents ~51 logs (with ~5000 bytes/log with big stacktrace) which already represent an extreme case.
+estimatedSizeOfRemoteLog = 5000
+maxSizeOfRemoteLogSendingQueue = 250 * 1024
 
 environments {
     debug {
@@ -88,7 +105,7 @@ environments {
         cdbUrl = 'https://directbidder-test-app.par.preprod.crto.in' // preprod
         // cdbUrl = 'http://10.0.2.2:9991' // local
 
-        minLogLevel = 2 // All
+        defaultMinLogLevel = 2 // All
         preconditionThrowsOnException = true
     }
 
@@ -96,7 +113,7 @@ environments {
         cdbUrl = 'https://bidder.criteo.com'
         eventUrl = 'https://gum.criteo.com'
 
-        minLogLevel = 2 // All
+        defaultMinLogLevel = 2 // All
     }
 
     release {

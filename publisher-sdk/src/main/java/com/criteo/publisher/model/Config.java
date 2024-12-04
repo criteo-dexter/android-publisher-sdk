@@ -20,9 +20,11 @@ import static com.criteo.publisher.util.ObjectUtils.getOrElse;
 
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
-import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
+import com.criteo.publisher.logging.RemoteLogRecords.RemoteLogLevel;
 import com.criteo.publisher.util.JsonSerializer;
 import com.criteo.publisher.util.SafeSharedPreferences;
 import java.io.ByteArrayInputStream;
@@ -33,26 +35,29 @@ import java.nio.charset.Charset;
 
 public class Config {
 
-  private static final String TAG = Config.class.getSimpleName();
-
   /**
    * Key in local storage where all configuration from remote is persisted.
    */
   private static final String CONFIG_STORAGE_KEY = "CriteoCachedConfig";
 
-  private static class DefaultConfig {
+  public static class DefaultConfig {
 
-    private static final boolean KILL_SWITCH = false;
-    private static final String DISPLAY_URL_MACRO = "%%displayUrl%%";
-    private static final String AD_TAG_URL_MODE = "<html><body style='text-align:center; margin:0px; padding:0px; horizontal-align:center;'><script src=\"%%displayUrl%%\"></script></body></html>";
-    private static final String AD_TAG_DATA_MACRO = "%%adTagData%%";
-    private static final String AD_TAG_DATA_MODE = "<html><body style='text-align:center; margin:0px; padding:0px; horizontal-align:center;'><script>%%adTagData%%</script></body></html>";
-    private static final boolean CSM_ENABLED = true;
-    private static final boolean LIVE_BIDDING_ENABLED = false;
-    private static final int LIVE_BIDDING_TIME_BUDGET_IN_MILLIS = 8_000;
-    private static final boolean PREFETCH_ON_INIT_ENABLED = true;
+    public static final boolean KILL_SWITCH = false;
+    public static final String DISPLAY_URL_MACRO = "%%displayUrl%%";
+    public static final String AD_TAG_URL_MODE = "<html><body style='text-align:center; margin:0px; padding:0px; horizontal-align:center;'><script src=\"%%displayUrl%%\"></script></body></html>";
+    public static final String AD_TAG_DATA_MACRO = "%%adTagData%%";
+    public static final String AD_TAG_DATA_MODE = "<html><body style='text-align:center; margin:0px; padding:0px; horizontal-align:center;'><script>%%adTagData%%</script></body></html>";
+    public static final boolean CSM_ENABLED = true;
+    public static final boolean LIVE_BIDDING_ENABLED = false;
+    public static final int LIVE_BIDDING_TIME_BUDGET_IN_MILLIS = 8_000;
+    public static final boolean PREFETCH_ON_INIT_ENABLED = true;
+    public static final RemoteLogLevel REMOTE_LOG_LEVEL = RemoteLogLevel.WARNING;
+    public static final boolean IS_MRAID_ENABLED = false;
+    public static final boolean IS_MRAID2_ENABLED = false;
 
   }
+
+  private final Logger logger = LoggerFactory.getLogger(getClass());
 
   // NOTE: This entire object is not at all thread-safe, but except the kill switch, other config
   //  are only accessed at display time. As they are only updated during SDK init, before any bids
@@ -101,7 +106,7 @@ public class Config {
     try (InputStream inputStream = new ByteArrayInputStream(remoteConfigJsonBytes)) {
       readConfig = jsonSerializer.read(RemoteConfigResponse.class, inputStream);
     } catch (IOException e) {
-      Log.d(TAG, "Couldn't read cached values", e);
+      logger.debug("Couldn't read cached values", e);
       return config;
     }
 
@@ -113,7 +118,7 @@ public class Config {
       @NonNull RemoteConfigResponse baseRemoteConfig,
       @NonNull RemoteConfigResponse overrideRemoteConfig
   ) {
-    return RemoteConfigResponse.create(
+    return new RemoteConfigResponse(
         getOrElse(
             overrideRemoteConfig.getKillSwitch(),
             baseRemoteConfig.getKillSwitch()
@@ -149,6 +154,18 @@ public class Config {
         getOrElse(
             overrideRemoteConfig.getPrefetchOnInitEnabled(),
             baseRemoteConfig.getPrefetchOnInitEnabled()
+        ),
+        getOrElse(
+            overrideRemoteConfig.getRemoteLogLevel(),
+            baseRemoteConfig.getRemoteLogLevel()
+        ),
+        getOrElse(
+            overrideRemoteConfig.isMraidEnabled(),
+            baseRemoteConfig.isMraidEnabled()
+        ),
+        getOrElse(
+            overrideRemoteConfig.isMraid2Enabled(),
+            baseRemoteConfig.isMraid2Enabled()
         )
     );
   }
@@ -173,7 +190,7 @@ public class Config {
       jsonSerializer.write(response, baos);
       remoteConfigJson = new String(baos.toByteArray(), Charset.forName("UTF-8"));
     } catch (Exception e) {
-      Log.d(TAG, "Couldn't persist values", e);
+      logger.debug("Couldn't persist values", e);
       return;
     }
 
@@ -264,4 +281,25 @@ public class Config {
     );
   }
 
+  @NonNull
+  public RemoteLogLevel getRemoteLogLevel() {
+    return getOrElse(
+        cachedRemoteConfig.getRemoteLogLevel(),
+        DefaultConfig.REMOTE_LOG_LEVEL
+    );
+  }
+
+  public boolean isMraidEnabled() {
+    return getOrElse(
+        cachedRemoteConfig.isMraidEnabled(),
+        DefaultConfig.IS_MRAID_ENABLED
+    );
+  }
+
+  public boolean isMraid2Enabled() {
+    return getOrElse(
+        cachedRemoteConfig.isMraid2Enabled(),
+        DefaultConfig.IS_MRAID2_ENABLED
+    );
+  }
 }

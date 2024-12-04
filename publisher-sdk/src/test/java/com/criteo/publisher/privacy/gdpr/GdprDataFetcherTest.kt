@@ -16,18 +16,18 @@
 
 package com.criteo.publisher.privacy.gdpr
 
-import com.nhaarman.mockitokotlin2.doReturn
-import com.nhaarman.mockitokotlin2.mock
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
 import kotlin.test.assertEquals
 
 @RunWith(Parameterized::class)
 class GdprDataFetcherTest(
-        private val gdprApplies: String,
-        /** interpretation of gdprApplies as Boolean according to expected GdprDataFetcher#fetch logic */
-        private val assertGdprApplies: Boolean
+    private val gdprApplies: String,
+    /** interpretation of gdprApplies as Boolean according to expected GdprDataFetcher#fetch logic */
+    private val assertGdprApplies: Boolean
 ) {
 
     companion object {
@@ -59,7 +59,7 @@ class GdprDataFetcherTest(
         val gdprData = gdprDataFetcher.fetch()
 
         // Then
-        assertEquals(assertGdprApplies, gdprData!!.gdprApplies())
-        assertEquals("fake_consent_string", gdprData.consentData())
+        assertEquals(assertGdprApplies, gdprData!!.gdprApplies)
+        assertEquals("fake_consent_string", gdprData.consentData)
     }
 }

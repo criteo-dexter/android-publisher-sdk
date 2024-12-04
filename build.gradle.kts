@@ -18,19 +18,25 @@ buildscript {
   addDefaultInputRepository()
 
   dependencies {
+    classpath(Deps.Jacoco.Core)
     classpath(Deps.Android.GradlePlugin)
     classpath(Deps.Kotlin.GradlePlugin)
     classpath(Deps.Kotlin.AllOpenPlugin)
   }
 }
 
+plugins {
+  id("org.sonarqube") version "3.0"
+  id("io.github.gradle-nexus.publish-plugin")
+  id("com.github.ben-manes.versions") version "0.50.0"
+}
+
 allprojects {
   addDefaultInputRepository()
 }
 
-plugins {
-  id("org.sonarqube") version "3.0"
-}
+group = Deps.Criteo.PublisherSdk.group
+addSonatypeOutputRepository()
 
 sonarqube {
   properties {
@@ -53,14 +59,16 @@ sonarqube {
         "sonar.coverage.exclusions",
         listOf(
             "app/src/main/**/*",
-            "publisher-sdk-tests/src/main/**/*"
+            "publisher-sdk-tests/src/main/**/*",
+            "test-utils/src/main/**/*" // FIXME EE-1370 handle coverage of test-utils from the SDK tests
         )
     )
 
     val junitReportFiles = allSubProjectsReports("**/TEST-*.xml") + // Normal tests
         allSubProjectsReports("test-results/gordon/*.xml") // Retried tests (Gordon runner)
     val junitReportDirs = junitReportFiles.mapNotNull { it.parentFile }.toSet()
-    property("sonar.junit.reportPaths", junitReportDirs)
+    // FIXME EE-1335 Reactivate and fix declaration of JUnit reports to Sonar
+    // property("sonar.junit.reportPaths", junitReportDirs)
 
     val lintReports = allSubProjectsReports("reports/lint-results.xml")
     property("sonar.androidLint.reportPaths", lintReports)

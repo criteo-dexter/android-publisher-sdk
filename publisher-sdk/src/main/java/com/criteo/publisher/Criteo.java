@@ -16,22 +16,37 @@
 
 package com.criteo.publisher;
 
+import static com.criteo.publisher.ErrorLogMessage.onUncaughtErrorAtPublicApi;
+import static com.criteo.publisher.logging.DeprecationLogMessage.onDeprecatedMethodCalled;
+import static com.criteo.publisher.SdkInitLogMessage.onDummySdkInitialized;
+import static com.criteo.publisher.SdkInitLogMessage.onErrorDuringSdkInitialization;
+import static com.criteo.publisher.SdkInitLogMessage.onSdkInitialized;
+import static com.criteo.publisher.SdkInitLogMessage.onSdkInitializedMoreThanOnce;
+
 import android.app.Application;
 import android.util.Log;
+import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
+import com.criteo.publisher.context.ContextData;
+import com.criteo.publisher.context.UserData;
 import com.criteo.publisher.interstitial.InterstitialActivityHelper;
+import com.criteo.publisher.logging.Logger;
+import com.criteo.publisher.logging.LoggerFactory;
 import com.criteo.publisher.model.AdUnit;
 import com.criteo.publisher.model.Config;
 import com.criteo.publisher.model.DeviceInfo;
 import com.criteo.publisher.util.DeviceUtil;
+import java.util.ArrayList;
 import java.util.List;
 
+@Keep
 public abstract class Criteo {
-  private static final String TAG = Criteo.class.getSimpleName();
+
   private static Criteo criteo;
 
+  @Keep
   public static class Builder {
 
     @NonNull
@@ -40,14 +55,19 @@ public abstract class Criteo {
     @NonNull
     private final Application application;
 
-    @Nullable
-    private List<AdUnit> adUnits;
+    @NonNull
+    private List<AdUnit> adUnits = new ArrayList<>();
 
     @Nullable
     private Boolean usPrivacyOptOut;
 
+    private boolean isDebugLogsEnabled = false;
+
     @Nullable
-    private String mopubConsent;
+    private Boolean tagForChildDirectedTreatment = null;
+
+    @Nullable
+    private String inventoryGroupId = null;
 
     public Builder(@NonNull Application application, @NonNull String criteoPublisherId) {
       this.application = application;
@@ -55,7 +75,11 @@ public abstract class Criteo {
     }
 
     public Builder adUnits(@Nullable List<AdUnit> adUnits) {
-      this.adUnits = adUnits;
+      if (adUnits == null) {
+        this.adUnits = new ArrayList<>();
+      } else {
+        this.adUnits = adUnits;
+      }
       return this;
     }
 
@@ -64,49 +88,79 @@ public abstract class Criteo {
       return this;
     }
 
-    public Builder mopubConsent(@Nullable String mopubConsent) {
-      this.mopubConsent = mopubConsent;
+    @Deprecated
+    public Builder mopubConsent(@Nullable String ignored) {
+      Logger logger = LoggerFactory.getLogger(Builder.class);
+      logger.log(onDeprecatedMethodCalled());
+      return this;
+    }
+
+    public Builder debugLogsEnabled(boolean isDebugLogsEnabled) {
+      this.isDebugLogsEnabled = isDebugLogsEnabled;
+      return this;
+    }
+
+    /**
+     * @see Criteo#setTagForChildDirectedTreatment(Boolean)
+     */
+    public Builder tagForChildDirectedTreatment(@Nullable Boolean tagForChildDirectedTreatment) {
+      this.tagForChildDirectedTreatment = tagForChildDirectedTreatment;
+      return this;
+    }
+
+    public Builder inventoryGroupId(@Nullable String inventoryGroupId) {
+      this.inventoryGroupId = inventoryGroupId;
       return this;
     }
 
     public Criteo init() throws CriteoInitException {
-      return Criteo.init(application, criteoPublisherId, adUnits, usPrivacyOptOut, mopubConsent);
+      return Criteo.init(this);
     }
   }
 
-  private static Criteo init(
-      @NonNull Application application,
-      @NonNull String criteoPublisherId,
-      @Nullable List<AdUnit> adUnits,
-      @Nullable Boolean usPrivacyOptOut,
-      @Nullable String mopubConsent
-  ) throws CriteoInitException {
+  private static Criteo init(@NonNull Builder builder) throws CriteoInitException {
+    Logger logger = LoggerFactory.getLogger(Criteo.class);
 
     synchronized (Criteo.class) {
       if (criteo == null) {
         try {
           DependencyProvider dependencyProvider = DependencyProvider.getInstance();
-          dependencyProvider.setApplication(application);
-          dependencyProvider.setCriteoPublisherId(criteoPublisherId);
+          dependencyProvider.setApplication(builder.application);
+          dependencyProvider.setCriteoPublisherId(builder.criteoPublisherId);
+          dependencyProvider.setInventoryGroupId(builder.inventoryGroupId);
+
+          if (builder.isDebugLogsEnabled) {
+            dependencyProvider.provideConsoleHandler().setMinLogLevel(Log.INFO);
+          }
 
           DeviceUtil deviceUtil = dependencyProvider.provideDeviceUtil();
-
           if (deviceUtil.isVersionSupported()) {
             criteo = new CriteoInternal(
-                application,
-                adUnits,
-                usPrivacyOptOut,
-                mopubConsent,
+                builder.application,
+                builder.adUnits,
+                builder.usPrivacyOptOut,
+                builder.tagForChildDirectedTreatment,
                 dependencyProvider
             );
+
+            logger.log(onSdkInitialized(builder.criteoPublisherId, builder.adUnits, getVersion()));
           } else {
             criteo = new DummyCriteo();
+
+            logger.log(onDummySdkInitialized());
           }
         } catch(Throwable tr) {
           criteo = new DummyCriteo();
-          Log.e(TAG, "Internal error initializing Criteo instance.", tr);
-          throw new CriteoInitException("Internal error initializing Criteo instance.", tr);
+
+          CriteoInitException criteoInitException = new CriteoInitException(
+              "Internal error initializing Criteo instance.",
+              tr
+          );
+          logger.log(onErrorDuringSdkInitialization(criteoInitException));
+          throw criteoInitException;
         }
+      } else {
+        logger.log(onSdkInitializedMoreThanOnce());
       }
       return criteo;
     }
@@ -128,12 +182,38 @@ public abstract class Criteo {
 
   public abstract void enrichAdObjectWithBid(Object object, @Nullable Bid bid);
 
-  abstract void getBidForAdUnit(@Nullable AdUnit adUnit, @NonNull BidListener bidListener);
+  abstract void getBidForAdUnit(
+      @Nullable AdUnit adUnit,
+      @NonNull ContextData contextData,
+      @NonNull BidListener bidListener
+  );
+
+  public void loadBid(
+      @NonNull AdUnit adUnit,
+      @NonNull BidResponseListener bidResponseListener
+  ) {
+    loadBid(adUnit, new ContextData(), bidResponseListener);
+  }
 
   public abstract void loadBid(
       @NonNull AdUnit adUnit,
+      @NonNull ContextData contextData,
       @NonNull BidResponseListener bidResponseListener
   );
+
+  /**
+   * Return the version of this SDK.
+   */
+  @NonNull
+  public static String getVersion() {
+    try {
+      return DependencyProvider.getInstance().provideBuildConfigWrapper().getSdkVersion();
+    } catch (Throwable t) {
+      Logger logger = LoggerFactory.getLogger(Criteo.class);
+      logger.log(onUncaughtErrorAtPublicApi(t));
+      return "";
+    }
+  }
 
   @NonNull
   abstract DeviceInfo getDeviceInfo();
@@ -145,10 +225,31 @@ public abstract class Criteo {
   abstract InterstitialActivityHelper getInterstitialActivityHelper();
 
   @NonNull
-  public abstract CriteoBannerEventController createBannerController(@NonNull CriteoBannerView bannerView);
+  public abstract CriteoBannerEventController createBannerController(@NonNull CriteoBannerAdWebView bannerView);
 
   public abstract void setUsPrivacyOptOut(boolean usPrivacyOptOut);
 
-  public abstract void setMopubConsent(@Nullable String mopubConsent);
+  @Deprecated
+  public void setMopubConsent(@Nullable String ignored) {
+    Logger logger = LoggerFactory.getLogger(Criteo.class);
+    logger.log(onDeprecatedMethodCalled());
+  }
+
+  public abstract void setUserData(@NonNull UserData userData);
+
+  /**
+   * Sets COPPA tag to be sent with bid requests.
+   * Refer to <a href="https://www.ftc.gov/business-guidance/privacy-security/childrens-privacy">gov website</a>
+   * for more information about regulation.
+   *
+   * @param tagForChildDirectedTreatment
+   * Pass {@code true} to indicate that your content is intended for children.
+   * Pass {@code false} to indicate that it should not be treated as child-directed.
+   * Pass {@code null} if you don't want to indicate how it should be treated.
+   * If nothing is set it defaults to null.
+   *
+   * @see Criteo.Builder#tagForChildDirectedTreatment(Boolean) Set tag using Criteo Builder
+   */
+  public abstract void setTagForChildDirectedTreatment(@Nullable Boolean tagForChildDirectedTreatment);
 
 }
